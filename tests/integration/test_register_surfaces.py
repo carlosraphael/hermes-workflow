@@ -65,6 +65,14 @@ def test_register_wires_tools_hooks_cli(recording_ctx):
     assert "workflow" in recording_ctx.slash
 
 
+def test_register_discovers_bundled_skills(recording_ctx):
+    import hermes_workflow
+
+    hermes_workflow.register(recording_ctx)
+
+    assert {"workflow-author", "workflow-orchestrator"} <= recording_ctx.skills
+
+
 def test_tool_handler_serializes_and_never_raises(fake_ctx):
     handler = tools.make_tool_handler(fake_ctx, tools.workflow_validate)
 

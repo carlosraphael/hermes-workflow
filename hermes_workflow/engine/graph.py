@@ -2,9 +2,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from hermes_workflow.engine.interpolate import interpolate
 from hermes_workflow.engine.model import Template, Stage
+from hermes_workflow.lanes.presets import lane_skill
 
 GATE_ASSIGNEE = "_workflow_gate"   # mirrors version.SENTINEL_GATE_ASSIGNEE
-_LANE_SKILL = {"codex": ["kanban-codex-lane"]}
 
 
 @dataclass(frozen=True)
@@ -86,7 +86,7 @@ def cards_for_run(t: Template, params: dict, bindings: dict, *, completed: dict,
                 assignee=assignee,
                 workspace=interpolate(stage.workspace, params=params, expand_vars={}),
                 parent_identities=_parents_for(stage, t, completed),
-                skills=list(_LANE_SKILL.get(lane, [])),
+                skills=([lane_skill(lane)] if lane and lane_skill(lane) else []),
                 gate=stage.gate == "human",
             ))
     return specs
