@@ -98,12 +98,12 @@ role**.
 ## 6. `expand` — single-level fan-out
 
 ```yaml
-expand: { over: scan.flaky, as: item }
+expand: { over: scan.flaky, as: t }
 ```
 
 `{ over: <stage>.<key>, as: <var> }` produces one card per item emitted by the
 source stage. The `<key>` (`flaky`) must match the source stage's
-`expand_out.key`. Inside the fanned-out stage, `${item.*}` refers to the current
+`expand_out.key`. Inside the fanned-out stage, `${t.*}` refers to the current
 item — **usable only in `title`/`body`** (never in a path or command).
 
 ## 7. `expand_out` — the fan-out source contract
@@ -113,7 +113,7 @@ On the fan-out **source** stage:
 ```yaml
 expand_out:
   key: flaky
-  item: { path: string, name: string }
+  item: { test_id: string, file: string }
   max: 50
 ```
 
@@ -181,15 +181,15 @@ stages:
     workspace: dir:${params.repo}
     expand_out:
       key: flaky
-      item: { path: string, name: string }
+      item: { test_id: string, file: string }
       max: 50
 
   - id: fix
     role: fixer
-    title: "Fix ${item.name}"
-    body: "Repair the flaky test at ${item.path} in an isolated worktree."
+    title: "Fix ${t.test_id}"
+    body: "Repair the flaky test ${t.test_id} (${t.file}) in an isolated worktree."
     needs: [scan]
-    expand: { over: scan.flaky, as: item }
+    expand: { over: scan.flaky, as: t }
     workspace: worktree:${params.repo}
 
   - id: approve
