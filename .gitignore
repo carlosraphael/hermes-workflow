@@ -6,6 +6,9 @@
 /.tmp_grill/
 /.tmp_probe/
 
+# Local-only AI workflow artifacts (design specs / plans / reviews) — never tracked
+/docs/superpowers/
+
 # Python
 __pycache__/
 *.py[cod]
