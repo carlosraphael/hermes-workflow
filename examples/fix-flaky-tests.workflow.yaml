@@ -1,0 +1,40 @@
+# fix-flaky-tests.workflow.yaml
+name: fix-flaky-tests
+version: 0.1.0                            # template version — independent of plugin version
+description: Find flaky tests, fix each in isolation (committed), gate, report.
+
+params:                                   # validated deterministically at start
+  repo: { type: string, required: true }
+
+roles:                                    # abstract roles → bound to profiles at start
+  scout:    { lane: profile }
+  fixer:    { lane: codex }               # reuses Hermes' bundled kanban-codex-lane skill
+  reporter: { lane: profile }
+
+stages:
+  - id: scan
+    role: scout
+    title: "Scan ${params.repo} for flaky tests"
+    body: |
+      Identify flaky tests. Return metadata.flaky as a list of
+      {test_id, file}. Do not fix anything.
+    workspace: "dir:${params.repo}"
+    expand_out: { key: flaky, max: 50, item: { test_id: string, file: string } }
+
+  - id: fix
+    role: fixer
+    needs: [scan]
+    expand: { over: scan.flaky, as: t }   # single-level fan-out: 1 card per flaky test
+    title: "Fix flaky test ${t.test_id}"
+    body:  "Fix ${t.test_id} in ${t.file}. Keep the change minimal. Commit before completing."
+    workspace: "worktree:${params.repo}"  # engine pre-provisions; card becomes dir:<provisioned-path>
+
+  - id: approve
+    needs: [fix]                          # join: a CHILD of every fix card; waits for ALL
+    gate:  human                          # non-spawnable; resolve via `hermes workflow approve|abandon`
+
+  - id: report
+    role: reporter
+    needs: [approve, fix]                 # approve = ordering; fix = data (handoffs from all fix cards)
+    title: "Summarize the fixes"
+    body:  "Summarize all fixes from the parent handoffs and list the branches."

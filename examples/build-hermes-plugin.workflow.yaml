@@ -1,0 +1,58 @@
+# build-hermes-plugin.workflow.yaml
+name: build-hermes-plugin
+version: 0.1.0
+description: Design a plugin's tools, build each in an isolated worktree, integrate, test, gate, enable.
+
+params:
+  repo:        { type: string, required: true }   # the git repo the worktrees branch from
+  plugin_name: { type: string, required: true }
+  purpose:     { type: string, required: true }
+
+roles:
+  architect: { lane: profile }
+  builder:   { lane: codex }               # reuses Hermes' bundled kanban-codex-lane skill
+  tester:    { lane: profile }
+  reporter:  { lane: profile }
+
+stages:
+  - id: spec
+    role: architect
+    title: "Design ${params.plugin_name}: ${params.purpose}"
+    body: |
+      Decompose ${params.plugin_name} (${params.purpose}) into the tools it
+      needs. Return metadata.tools as a list of {name, description}. Do not
+      write code.
+    workspace: "dir:${params.repo}"
+    expand_out: { key: tools, max: 20, item: { name: string, description: string } }
+
+  - id: implement
+    role: builder
+    needs: [spec]
+    expand: { over: spec.tools, as: tool }   # single-level fan-out: 1 worktree card per tool
+    title: "Implement tool ${tool.name}"
+    body:  "Implement ${tool.name} (${tool.description}) for the ${params.plugin_name} plugin. Keep it self-contained. Commit before completing."
+    workspace: "worktree:${params.repo}"
+
+  - id: integrate
+    role: architect
+    needs: [implement]                       # join over ALL implement instances
+    title: "Integrate the tools into one ${params.plugin_name} plugin"
+    body:  "Collect the per-tool branches from the parent handoffs into a single ${params.plugin_name} plugin. Commit before completing."
+    workspace: "dir:${params.repo}"
+
+  - id: test
+    role: tester
+    needs: [integrate]
+    title: "Run the ${params.plugin_name} test suite"
+    body:  "Run the plugin's tests and commit any fixes. Commit before completing."
+    workspace: "dir:${params.repo}"
+
+  - id: review
+    needs: [test]
+    gate:  human
+
+  - id: enable
+    role: reporter
+    needs: [review]                          # data already consolidated by integrate; only ordering needed here
+    title: "Report and enable ${params.plugin_name}"
+    body:  "Summarize the build and list how to enable ${params.plugin_name}."
