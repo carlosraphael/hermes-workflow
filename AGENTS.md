@@ -120,9 +120,7 @@ cards up to the next dynamic (fan-out) boundary.
   `skipped_nonspawnable` — the root blackboard and human gates never auto-spawn a
   worker.
 
-Cross-check against
-[`docs/superpowers/reviews/2026-06-04-hermes-workflow-v0.1.0-audit.md`](docs/superpowers/reviews/2026-06-04-hermes-workflow-v0.1.0-audit.md),
-`version.py`, and `engine/provenance.py`.
+Cross-check against `version.py` and `engine/provenance.py`.
 
 ## Adding a tool or hook
 
