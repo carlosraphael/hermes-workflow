@@ -92,7 +92,10 @@ def test_start_fails_fast_on_unloadable_profile(fake_ctx, tmp_board, monkeypatch
     assert r["error"]
     assert "pre-flight" in r["error"] or "zero cards" in r["error"]
     assert "coder" in r["profiles"]
-    assert "plugins enable" in r["remediation"]["coder"]
+    rem = r["remediation"]["coder"]
+    assert "plugins enable" not in rem        # the dead command must be gone
+    assert "plugins.enabled" in rem           # the real config key
+    assert "coder" in rem                      # names the affected profile
 
     # ZERO cards created (no root, no prefix).
     host = HostBoard(tmp_board.kb, tmp_board.conn, tmp_board.name)

@@ -44,11 +44,22 @@ pip install hermes-workflow
 pip install -e .
 ```
 
-Then **enable it in EVERY bound profile** — not just the orchestrator's:
+Then **enable it in EVERY bound profile** — not just the orchestrator's. This is
+a pip / entry-point plugin, so `hermes plugins enable` does **not** apply to it
+(that command only sees user-dir and bundled plugins). Instead add
+`hermes-workflow` to the `plugins.enabled` list in each bound profile's
+`config.yaml` — open it with `hermes -p <profile> config edit` (or edit
+`<that profile's HERMES_HOME>/config.yaml` directly) and add:
 
-```sh
-hermes -p <profile> plugins enable hermes-workflow
+```yaml
+plugins:
+  enabled:
+    - hermes-workflow
 ```
+
+The change takes effect on the **next session**. (Do **not** use
+`hermes config set plugins.enabled …` — it writes a scalar string, which breaks
+the loader's list check.)
 
 **Per-profile enablement is the #1 failure mode.** Workers read the plugin's
 load status from the *assignee profile's* home, so the plugin must be enabled

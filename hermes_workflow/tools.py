@@ -56,7 +56,9 @@ def _remediation(profile: str, err) -> str:
     enabling under that profile; anything else is a genuine load error.
     """
     if err is None or err == "not-discovered" or "not enabled" in err:
-        return f"hermes -p {profile} plugins enable hermes-workflow"
+        return (f"enable hermes-workflow for profile '{profile}': add 'hermes-workflow' to the "
+                f"plugins.enabled list in that profile's config.yaml "
+                f"(hermes -p {profile} config edit), then start a new session")
     return f"load error: {err}"
 
 
