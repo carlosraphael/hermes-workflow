@@ -25,7 +25,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-def test_list_plugins_reports_load_status_shape(hermes_root, tmp_path, monkeypatch):
+def test_list_plugins_reports_load_status_shape(hermes_root, tmp_path, monkeypatch, request):
     # monkeypatch auto-restores both env vars after the test (no os.environ
     # mutation left behind). HERMES_HOME isolates the profile; the project-
     # plugins gate is set explicitly so the scan behavior is deterministic.
@@ -33,6 +33,16 @@ def test_list_plugins_reports_load_status_shape(hermes_root, tmp_path, monkeypat
     monkeypatch.setenv("HERMES_ENABLE_PROJECT_PLUGINS", "1")
 
     from hermes_cli import plugins
+
+    # force=True rescans under our tmp HERMES_HOME and CACHES the result on the
+    # process-global PluginManager singleton. monkeypatch restores HERMES_HOME
+    # on teardown but does NOT undo that singleton mutation, so without this
+    # finalizer the cache outlives the test pointed at a since-deleted tmp dir —
+    # the single-process equivalent of the cross-test leak that subprocess
+    # isolation prevents (production preflight.py spawns a subprocess for
+    # exactly this reason). Reset the singleton to None so the next
+    # get_plugin_manager() rediscovers cleanly under the then-current home.
+    request.addfinalizer(lambda: setattr(plugins, "_plugin_manager", None))
 
     # force=True: the singleton is process-global and may have already
     # discovered in an earlier test; without force this is a no-op and would
