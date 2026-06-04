@@ -78,3 +78,42 @@ def test_pre_commit_clean_blocks_uncommitted_worktree(fake_ctx, tmp_board, seed_
     (pathlib.Path(wt) / "dirty.txt").write_text("x")
     d = on_tool_pre(ctx=fake_ctx, tool_name="kanban_complete", args={"task_id": fix0}, task_id=fix0)
     assert d and d["action"] == "block" and "commit" in d["message"].lower()
+
+
+# D6-01: on_tool_pre is the workflow's ONLY blocking channel (a pre_tool_call veto).
+# Per Spike 1 (tests/SPIKES.md), a pre_tool_call hook that RAISES fails OPEN — Hermes
+# swallows the exception and allows the tool. So the hook's own except MUST veto by
+# RETURNING a block dict and must NEVER raise / return None. These two tests drive that
+# except branch by monkeypatching a post-sentinel call to raise on a real seeded card.
+def test_pre_fails_closed_when_parse_root_body_raises(fake_ctx, tmp_board, seed_run, monkeypatch):
+    from hermes_workflow import hooks
+    seeded = seed_run()
+    def _boom(*a, **k):
+        raise RuntimeError("simulated internal failure after sentinel resolution")
+    # call site (A): runs right after sentinel resolution (hooks.py).
+    monkeypatch.setattr(hooks, "parse_root_body", _boom)
+    d = hooks.on_tool_pre(ctx=fake_ctx, tool_name="kanban_complete",
+                          args={"task_id": seeded.scan_id,
+                                "metadata": {"flaky": [{"test_id": "T1", "file": "a.py"}]}},
+                          task_id=seeded.scan_id)
+    # The only blocking channel must FAIL CLOSED: a block dict, never None, never a raise.
+    assert isinstance(d, dict)
+    assert d.get("action") == "block"
+    assert d.get("message")          # non-empty reason (Hermes ignores empty-message blocks)
+
+
+def test_pre_fails_closed_when_stage_gate_inputs_raises(fake_ctx, tmp_board, seed_run, monkeypatch):
+    from hermes_workflow import hooks
+    seeded = seed_run()
+    def _boom(*a, **k):
+        raise RuntimeError("simulated internal failure after sentinel resolution")
+    # call site (B): runs AFTER parse_root_body + the version check have already succeeded.
+    monkeypatch.setattr(hooks, "_stage_gate_inputs", _boom)
+    d = hooks.on_tool_pre(ctx=fake_ctx, tool_name="kanban_complete",
+                          args={"task_id": seeded.scan_id,
+                                "metadata": {"flaky": [{"test_id": "T1", "file": "a.py"}]}},
+                          task_id=seeded.scan_id)
+    # The only blocking channel must FAIL CLOSED: a block dict, never None, never a raise.
+    assert isinstance(d, dict)
+    assert d.get("action") == "block"
+    assert d.get("message")          # non-empty reason (Hermes ignores empty-message blocks)
