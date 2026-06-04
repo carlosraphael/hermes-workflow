@@ -99,7 +99,9 @@ def test_pre_fails_closed_when_parse_root_body_raises(fake_ctx, tmp_board, seed_
     # The only blocking channel must FAIL CLOSED: a block dict, never None, never a raise.
     assert isinstance(d, dict)
     assert d.get("action") == "block"
-    assert d.get("message")          # non-empty reason (Hermes ignores empty-message blocks)
+    # Hermes blocks ONLY on a non-empty STR message (plugins.py get_pre_tool_call_block_message
+    # checks isinstance(message, str) and truthiness); a non-str/empty message fails OPEN.
+    assert isinstance(d.get("message"), str) and d["message"]
 
 
 def test_pre_fails_closed_when_stage_gate_inputs_raises(fake_ctx, tmp_board, seed_run, monkeypatch):
@@ -116,4 +118,6 @@ def test_pre_fails_closed_when_stage_gate_inputs_raises(fake_ctx, tmp_board, see
     # The only blocking channel must FAIL CLOSED: a block dict, never None, never a raise.
     assert isinstance(d, dict)
     assert d.get("action") == "block"
-    assert d.get("message")          # non-empty reason (Hermes ignores empty-message blocks)
+    # Hermes blocks ONLY on a non-empty STR message (plugins.py get_pre_tool_call_block_message
+    # checks isinstance(message, str) and truthiness); a non-str/empty message fails OPEN.
+    assert isinstance(d.get("message"), str) and d["message"]

@@ -159,20 +159,30 @@ def test_abandon_reclaims_running_worker_before_archiving(fake_ctx, tmp_board, t
     assert claimed is not None
     assert tmp_board.status(fix0) == "running"
 
-    # Spy on reclaim to prove the reclaim-running-FIRST branch is exercised.
-    real_reclaim = HostBoard.reclaim
-    reclaimed = []
+    # Spy on reclaim AND archive into one ordered event log to prove the running
+    # worker is reclaimed FIRST — before any archive in the leaves-first sweep.
+    real_reclaim, real_archive = HostBoard.reclaim, HostBoard.archive
+    events = []
     def spy_reclaim(self, cid):
-        reclaimed.append(cid)
+        events.append(("reclaim", cid))
         return real_reclaim(self, cid)
+    def spy_archive(self, cid):
+        events.append(("archive", cid))
+        return real_archive(self, cid)
     monkeypatch.setattr(HostBoard, "reclaim", spy_reclaim)
+    monkeypatch.setattr(HostBoard, "archive", spy_archive)
 
     r = workflow_abandon(fake_ctx, root_id=root, board=tmp_board.name,
                          kb=tmp_board.kb, conn=tmp_board.conn)
 
-    # the running fix card was reclaimed before archiving ...
+    # the running fix card was reclaimed, with NO reclaim failures ...
+    reclaimed = [c for op, c in events if op == "reclaim"]
     assert fix0 in reclaimed
     assert not any(f["op"] == "reclaim" for f in r["failures"])
+    # ... and that reclaim ran BEFORE the first archive (reclaim-running-FIRST).
+    reclaim_fix0_idx = next(i for i, (op, c) in enumerate(events) if op == "reclaim" and c == fix0)
+    first_archive_idx = next(i for i, (op, _c) in enumerate(events) if op == "archive")
+    assert reclaim_fix0_idx < first_archive_idx
     # ... and the whole run + root archived (full teardown).
     rv2 = RunView.from_root(fake_ctx, board=tmp_board.name, root_id=root)
     assert all(rv2.status[c] == "archived" for c in rv2.by_identity.values())
