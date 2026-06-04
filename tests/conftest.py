@@ -1,5 +1,5 @@
 # tests/conftest.py
-import contextlib, os, sys, pathlib, pytest
+import contextlib, os, subprocess, sys, pathlib, pytest
 
 HERMES_ROOT = pathlib.Path(
     os.environ.get("HERMES_AGENT_ROOT", "/Users/carlos/cortex-workspace/hermes-agent")
@@ -62,6 +62,24 @@ if _INTEGRATION_DIR not in sys.path:
     sys.path.insert(0, _INTEGRATION_DIR)
 
 
+def _init_git_repo(base_dir, name="wf_repo"):
+    """Create a genuinely-initialized git repo with one commit.
+
+    Used by the ``wf_repo`` fixture to back ``worktree:`` workspaces (materialize
+    runs a real ``git worktree add``).
+    """
+    repo = base_dir / name
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    (repo / "f").write_text("x")
+    subprocess.run(["git", "add", "f"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-m", "init"],
+        cwd=repo, check=True, capture_output=True,
+    )
+    return repo
+
+
 @pytest.fixture
 def tmp_board(hermes_root, tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -70,10 +88,39 @@ def tmp_board(hermes_root, tmp_path, monkeypatch):
     from board import Board
 
     conn = kb.connect(board="test")
+    board = Board(kb, conn, "test")
     try:
-        yield Board(kb, conn, "test")
+        yield board
     finally:
         conn.close()
+
+
+@pytest.fixture
+def wf_repo(tmp_board, tmp_path):
+    """A real git repo backing ``worktree:`` workspaces, attached as ``tmp_board.repo``.
+
+    Opt-in (only runs that actually provision worktrees need it) so the ~47
+    integration tests that never touch ``tmp_board.repo`` don't pay for a git
+    init. Uses the ``wf_repo`` subdir, distinct from the ``tmp_path/"repo"`` that
+    some test-local helpers create, to avoid a mkdir collision.
+    """
+    tmp_board.repo = _init_git_repo(tmp_path)
+    return tmp_board.repo
+
+
+@pytest.fixture
+def stub_preflight_ok(monkeypatch):
+    """Force the per-profile pre-flight probe green so workflow_start seeds cards.
+
+    workflow_start otherwise spawns a real subprocess probe per bound profile
+    (designer/coder/writer aren't real profiles -> probe fails -> zero cards).
+    Also clears HERMES_KANBAN_TASK so the orchestrator-context guard passes.
+    """
+    monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+    monkeypatch.setattr(
+        "hermes_workflow.tools.probe_profiles",
+        lambda profiles, **kw: {p: {"ok": True, "error": None} for p in profiles},
+    )
 
 
 @pytest.fixture
