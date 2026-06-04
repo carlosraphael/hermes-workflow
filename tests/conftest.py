@@ -121,11 +121,12 @@ def seed_run(tmp_board):
     from hermes_workflow.version import PLUGIN_VERSION, SCHEMA_VERSION, SENTINEL_ROOT_ASSIGNEE
     Seeded = namedtuple("Seeded", "root_id scan_id")
 
-    def _seed(template_yaml=DEMO_TPL, params=DEMO_PARAMS, bindings=DEMO_BINDINGS):
-        root_body = build_root_body(template_yaml, params, bindings, PLUGIN_VERSION, SCHEMA_VERSION)
+    def _seed(template_yaml=DEMO_TPL, params=DEMO_PARAMS, bindings=DEMO_BINDINGS,
+              schema_version=SCHEMA_VERSION):
+        root_body = build_root_body(template_yaml, params, bindings, PLUGIN_VERSION, schema_version)
         root_id = tmp_board.create(title="wf root", assignee=SENTINEL_ROOT_ASSIGNEE, body=root_body)
         tmp_board.complete(root_id)  # root is a completed blackboard
-        scan_sent = Sentinel(root_id, "scan", 0, 0, "demo", "0.1.0", PLUGIN_VERSION, SCHEMA_VERSION)
+        scan_sent = Sentinel(root_id, "scan", 0, 0, "demo", "0.1.0", PLUGIN_VERSION, schema_version)
         scan_body = embed_sentinel("scan body", scan_sent)
         scan_id = tmp_board.create(title="scan /r", parents=[root_id], assignee="designer",
                                    workspace_kind="dir", workspace_path=params["repo"], body=scan_body)

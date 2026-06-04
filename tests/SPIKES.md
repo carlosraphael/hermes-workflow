@@ -546,3 +546,37 @@ latest_run(conn, task_id) -> Optional[Run]
   30-day GC'd). Reconcile reads this UNBOUNDED column directly, NOT the ~4 KB-truncated
   `build_worker_context` view (finding R). This is the durable source-handoff input the
   graph function re-runs from.
+
+## §14 Open question CLOSED (Task 17) — hook fan-out does NOT trip `HallucinatedCardsError` **[test + source]**
+
+The §14 worry: cards the `post_tool_call` fan-out hook creates via
+`dispatch_tool("kanban_create")` — fired from inside a completing worker — might trip
+the `created_cards` / `HallucinatedCardsError` gate in `complete_task`. **CLOSED: it
+cannot. HallucinatedCardsError did NOT trip.**
+
+Source reason (read by this task):
+- The gate in `complete_task` (`hermes_cli/kanban_db.py:3550`) is `if created_cards:`
+  — it ONLY runs when a completion explicitly passes a truthy `created_cards` list,
+  then `_verify_created_cards` (`:3373`) checks each id against `tasks.created_by` and
+  `raise HallucinatedCardsError(...)` on a phantom (`:3568`).
+- `_handle_complete` (`tools/kanban_tools.py:489-501, 560`) only forwards
+  `created_cards` to `complete_task` when the WORKER itself passed it on the
+  `kanban_complete` call. The completed-metadata is read later from the board (by
+  RunView), never from this arg.
+- The fan-out hook runs in `post_tool_call` (`model_tools.py:993-1006`) AFTER
+  `kanban_complete` already returned, and only calls `kanban_create`/`kanban_link`/
+  `kanban_comment` — NEVER `kanban_complete`/`complete_task(..., created_cards=...)`.
+  So the gate is structurally unreachable from the hook.
+- `kanban_create` stamps `created_by = os.environ.get("HERMES_PROFILE") or "worker"`
+  (`tools/kanban_tools.py:817`), so the hook's cards are attributable, not phantom,
+  even if a later completion ever did declare them.
+
+Proof (`tests/integration/test_hook_fanout.py::test_hook_fans_out_on_scan_complete`):
+`on_tool_done(...)` is fired INSIDE `as_worker(scan_id)` (sets `HERMES_KANBAN_TASK` —
+the realistic worker context). After the hook, RunView resolves `("fix",0,0)`,
+`("fix",1,0)` and the R5 join `("approve",0,0)` to real cards. Those cards can only
+exist if `dispatch_tool("kanban_create")` SUCCEEDED — a `HallucinatedCardsError` would
+have surfaced as a tool_error and the cards would be ABSENT. They are present, so the
+gate never fired. (Belt-and-suspenders: `invoke_hook`, `plugins.py:1556-1568`, also
+wraps each callback in its own try/except, but the hook is side-effect-only and
+never-raises in its own right — `tests/integration/test_hook_fanout.py`.)
