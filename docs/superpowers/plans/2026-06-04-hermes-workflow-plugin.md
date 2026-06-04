@@ -413,7 +413,7 @@ git commit -m "test(spike): leaves-first archive, host-only archive, worktree pr
 - Create: `tests/integration/board.py`
 - Modify: `tests/conftest.py`
 
-- [ ] **Step 1: Implement a thin board harness wrapping `hermes_cli.kanban_db`**
+- [x] **Step 1: Implement a thin board harness wrapping `hermes_cli.kanban_db`**
 
 ```python
 # tests/integration/board.py
@@ -447,7 +447,7 @@ class Board:
 
 > Confirm the exact `kb.*` signatures against Task 3/5 `SPIKES.md` and adjust kwargs to match (e.g. `create_task` param names). Do not guess — use the recorded signatures.
 
-- [ ] **Step 2: Add fixtures `tmp_board`, `mk_card`, `complete_card`, `as_worker` to `conftest.py`**
+- [x] **Step 2: Add fixtures `tmp_board`, `mk_card`, `complete_card`, `as_worker` to `conftest.py`**
 
 ```python
 # tests/conftest.py  (append)
@@ -489,7 +489,7 @@ def as_worker():
     return _ctx
 ```
 
-- [ ] **Step 3: Run the Phase-0 spikes against the real fixtures; commit**
+- [x] **Step 3: Run the Phase-0 spikes against the real fixtures; commit**
 
 Run: `pytest tests/integration -v` (all spikes now green against `tmp_board`).
 
@@ -508,7 +508,7 @@ git commit -m "test: no-LLM board harness + fixtures"
 - Create: `hermes_workflow/engine/template.py`
 - Test: `tests/unit/test_template_parse.py`
 
-- [ ] **Step 1: Write the failing parse test**
+- [x] **Step 1: Write the failing parse test**
 
 ```python
 # tests/unit/test_template_parse.py
@@ -552,12 +552,12 @@ def test_parse_basic_template():
     assert t.stage("approve").gate == "human"
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `pytest tests/unit/test_template_parse.py -v`
 Expected: FAIL (module not found).
 
-- [ ] **Step 3: Implement the data model**
+- [x] **Step 3: Implement the data model**
 
 ```python
 # hermes_workflow/engine/model.py
@@ -622,7 +622,7 @@ class Template:
         raise KeyError(sid)
 ```
 
-- [ ] **Step 4: Implement the parser**
+- [x] **Step 4: Implement the parser**
 
 ```python
 # hermes_workflow/engine/template.py
@@ -661,7 +661,7 @@ def parse_template(text: str) -> Template:
                     params, roles, tuple(stages))
 ```
 
-- [ ] **Step 5: Run + commit**
+- [x] **Step 5: Run + commit**
 
 Run: `pytest tests/unit/test_template_parse.py -v` → PASS.
 
@@ -680,7 +680,7 @@ git commit -m "feat(engine): template data model + YAML parser"
 
 Validation rules from §5 / §7 / §11: unknown role refs; cycle in `needs`; `expand.over` references a real prior stage + its `expand_out.key`; **nested expand forbidden** (an `expand` stage may not be the source of another `expand` — R1); **reject `verify`/`retry`** (0.2.x — A1); `verify`/worktree stages may not use `scratch`; `${...}` in `workspace:` may only reference `params` (D3); a pure `gate` stage has no `role`.
 
-- [ ] **Step 1: Write failing validation tests**
+- [x] **Step 1: Write failing validation tests**
 
 ```python
 # tests/unit/test_template_validate.py
@@ -749,11 +749,11 @@ stages:
         _v(y)
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `pytest tests/unit/test_template_validate.py -v` → FAIL (`validate_template` undefined).
 
-- [ ] **Step 3: Implement `validate_template`**
+- [x] **Step 3: Implement `validate_template`**
 
 ```python
 # hermes_workflow/engine/template.py  (append)
@@ -820,7 +820,7 @@ def _check_cycle(t: Template) -> None:
 
 > The parser intentionally ignores a raw `verify:` key; to reject it we must surface it. In Step 3 of Task 7's parser, also capture `raw_verify = s.get("verify")` onto the `Stage` (add `verify_raw: object = None` to the `Stage` dataclass) so `validate_template` can reject it. Make that one-line dataclass + parser change here and re-run Task 7's test to confirm it still passes.
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/unit/test_template_validate.py tests/unit/test_template_parse.py -v` → PASS.
 
@@ -837,7 +837,7 @@ git commit -m "feat(engine): template validation (roles, cycles, nested-expand, 
 - Create: `hermes_workflow/engine/interpolate.py`
 - Test: `tests/unit/test_interpolate.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/test_interpolate.py
@@ -863,9 +863,9 @@ def test_unknown_namespace_raises():
         interpolate("${env.HOME}", params={}, expand_vars={})
 ```
 
-- [ ] **Step 2: Run → FAIL.** `pytest tests/unit/test_interpolate.py -v`
+- [x] **Step 2: Run → FAIL.** `pytest tests/unit/test_interpolate.py -v`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # hermes_workflow/engine/interpolate.py
@@ -896,7 +896,7 @@ def interpolate(s: str, *, params: dict, expand_vars: dict) -> str:
     return _TOKEN.sub(repl, s)
 ```
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/unit/test_interpolate.py -v` → PASS.
 
@@ -913,7 +913,7 @@ git commit -m "feat(engine): bounded interpolation (params + expand-vars only)"
 - Create: `hermes_workflow/engine/provenance.py`
 - Test: `tests/unit/test_provenance.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/test_provenance.py
@@ -949,9 +949,9 @@ def test_version_gate_is_total_and_never_raises():
     assert is_version_compatible(object(), supported={"0.1"}) is False
 ```
 
-- [ ] **Step 2: Run → FAIL.** `pytest tests/unit/test_provenance.py -v`
+- [x] **Step 2: Run → FAIL.** `pytest tests/unit/test_provenance.py -v`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # hermes_workflow/engine/provenance.py
@@ -1025,7 +1025,7 @@ def is_version_compatible(snapshot, supported) -> bool:
         return False
 ```
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/unit/test_provenance.py -v` → PASS.
 
@@ -1044,7 +1044,7 @@ git commit -m "feat(engine): provenance — sentinels, compiled snapshot, total 
 
 The graph function answers: *given the compiled template + which stages are done (+ their emitted metadata) + which workflow cards already exist (by sentinel identity), what CardSpecs should exist up to the next dynamic boundary?* Parents are expressed as **sentinel identities** (resolved to card-ids by the imperative shell). Used identically by the fan-out hook and by reconcile (create-missing).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/test_graph.py
@@ -1117,9 +1117,9 @@ def test_existing_cards_are_not_recreated():
     assert all(s.identity not in existing for s in specs)         # idempotent: only missing cards
 ```
 
-- [ ] **Step 2: Run → FAIL.** `pytest tests/unit/test_graph.py -v`
+- [x] **Step 2: Run → FAIL.** `pytest tests/unit/test_graph.py -v`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # hermes_workflow/engine/graph.py
@@ -1216,7 +1216,7 @@ def cards_for_run(t: Template, params: dict, bindings: dict, *, completed: dict,
     return specs
 ```
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/unit/test_graph.py -v` → PASS.
 
@@ -1235,7 +1235,7 @@ git commit -m "feat(engine): graph function (prefix, single-level fan-out, joins
 
 The engine half of reconcile is pure: given duplicate cards sharing one sentinel identity, pick the **winner** deterministically (any `done` wins; tiebreak `task_runs.id` → `created_at` → `min(card_id)`). The imperative shell (Task 17) does create-missing + link-winner-then-archive-loser.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/test_reconcile.py
@@ -1261,9 +1261,9 @@ def test_no_done_ranks_by_status_then_id():
     assert pick_winner(rows).card_id == "t_x"   # running > todo
 ```
 
-- [ ] **Step 2: Run → FAIL.** `pytest tests/unit/test_reconcile.py -v`
+- [x] **Step 2: Run → FAIL.** `pytest tests/unit/test_reconcile.py -v`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # hermes_workflow/engine/reconcile.py
@@ -1295,7 +1295,7 @@ def pick_winner(rows: list[CardRow]) -> CardRow:
     ))
 ```
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/unit/test_reconcile.py -v` → PASS. Then run the whole unit suite: `pytest tests/unit -v` → all PASS.
 
