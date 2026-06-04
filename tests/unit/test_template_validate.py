@@ -27,9 +27,24 @@ def test_unknown_role_rejected():
 
 
 def test_verify_command_rejected_as_0_2_x():
-    y = BASE + "    verify: { command: 'pytest', retry: 1 }\n"
-    with pytest.raises(TemplateError, match="0.2.x|verify"):
-        _v(y)
+    y = """
+name: t
+version: 0.1.0
+params: {}
+roles: { a: { lane: profile } }
+stages:
+  - id: s1
+    role: a
+    title: x
+    verify:
+      command: pytest
+      retry: 1
+"""
+    # parse must SUCCEED and capture verify_raw; the rejection is validate_template's job
+    t = parse_template(y)
+    assert t.stage("s1").verify_raw == {"command": "pytest", "retry": 1}
+    with pytest.raises(TemplateError, match="0.2.x"):
+        validate_template(t)
 
 
 def test_nested_expand_rejected():
