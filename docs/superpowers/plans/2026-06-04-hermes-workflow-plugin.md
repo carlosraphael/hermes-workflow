@@ -2526,7 +2526,7 @@ git commit -m "feat: example templates (fix-flaky-tests, build-hermes-plugin)"
 **Files:**
 - Create: `tests/integration/test_end_to_end.py`
 
-- [ ] **Step 1: Write the e2e test driving workers by hand (no model)**
+- [x] **Step 1: Write the e2e test driving workers by hand (no model)**
 
 ```python
 # tests/integration/test_end_to_end.py
@@ -2574,11 +2574,11 @@ def test_full_run(fake_ctx, tmp_board, stub_preflight_ok):
     assert tmp_board.status(gate) == "done"
 ```
 
-- [ ] **Step 2: Run + iterate until green**
+- [x] **Step 2: Run + iterate until green**
 
 Run: `pytest tests/integration/test_end_to_end.py -v`. Fix any signature drift against `SPIKES.md`. Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/integration/test_end_to_end.py
@@ -2592,7 +2592,7 @@ git commit -m "test(e2e): start -> fan-out -> gate -> approve, no LLM"
 **Files:**
 - Create: `tests/integration/test_backstops.py`
 
-- [ ] **Step 1: Write the regression tests**
+- [x] **Step 1: Write the regression tests**
 
 ```python
 # tests/integration/test_backstops.py
@@ -2638,9 +2638,9 @@ def test_reconcile_recreates_and_dedups(fake_ctx, tmp_board, partial_fanout):
     assert rv.card_id_for(("fix", 0, 0)) and rv.card_id_for(("fix", 1, 0))
 ```
 
-- [ ] **Step 2: Run + iterate** until green. Add `started_run`/`partial_fanout` helpers to `conftest.py`.
+- [x] **Step 2: Run + iterate** until green. Add `started_run`/`partial_fanout` helpers to `conftest.py`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/integration/test_backstops.py tests/conftest.py
@@ -2655,15 +2655,15 @@ git commit -m "test: backstops — review-required surfacing, version-mismatch r
 - Create: `README.md`
 - Create: `docs/operations.md`
 
-- [ ] **Step 1: Write `README.md`** — what the plugin is, install (`pip install` + `hermes -p <profile> plugins enable hermes-workflow` in **every bound profile**), the codex-lane bundled-skill requirement, and a quickstart using `examples/fix-flaky-tests.workflow.yaml`.
+- [x] **Step 1: Write `README.md`** — what the plugin is, install (`pip install` + `hermes -p <profile> plugins enable hermes-workflow` in **every bound profile**), the codex-lane bundled-skill requirement, and a quickstart using `examples/fix-flaky-tests.workflow.yaml`.
 
-- [ ] **Step 2: Write `docs/operations.md`** — the §2 **drain-before-upgrade** rule + the worker-side version gate; the §11 caveats (per-profile enablement #1 failure mode; gate sentinel `stranded_in_ready` is expected; worktrees preserved on `abandon` — prune manually; worker profiles must not set `worktree:true`).
+- [x] **Step 2: Write `docs/operations.md`** — the §2 **drain-before-upgrade** rule + the worker-side version gate; the §11 caveats (per-profile enablement #1 failure mode; gate sentinel `stranded_in_ready` is expected; worktrees preserved on `abandon` — prune manually; worker profiles must not set `worktree:true`).
 
-- [ ] **Step 3: Verify the full suite + packaging**
+- [x] **Step 3: Verify the full suite + packaging**
 
 Run: `pytest -q` (unit always; integration when the Hermes checkout is present) and `python -m build` (or `pip wheel . -w /tmp/wf`) to confirm the entry point packages.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md docs/operations.md
