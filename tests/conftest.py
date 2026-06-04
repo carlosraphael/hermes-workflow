@@ -93,6 +93,32 @@ def complete_card(tmp_board):
 
 
 @pytest.fixture
+def fake_ctx(hermes_root, tmp_board):
+    """A tiny stand-in for a Hermes PluginContext exposing only dispatch_tool.
+
+    Mirrors the tail of the production PluginContext.dispatch_tool
+    (hermes_cli/plugins.py): it routes straight to the registry singleton.
+    Importing ``tools.kanban_tools`` triggers the module-level
+    registry.register(...) calls for kanban_create/link/comment/show, so the
+    handlers exist before we dispatch. We skip the parent_agent wiring the real
+    context does — kanban handlers ignore that kwarg (no LLM needed).
+
+    Depends on hermes_root (puts hermes-agent on sys.path) and tmp_board (sets
+    HERMES_HOME/HERMES_KANBAN_BOARD and opens the board). Each handler opens its
+    own connection to the same board file, which is fine: separate connections
+    to one sqlite board read each other's writes (proven by the version-gate
+    spike).
+    """
+    class _FakeCtx:
+        def dispatch_tool(self, tool_name, args, **kwargs):
+            import tools.kanban_tools  # noqa: F401 — ensure handler registration
+            from tools.registry import registry
+            return registry.dispatch(tool_name, args, **kwargs)
+
+    return _FakeCtx()
+
+
+@pytest.fixture
 def as_worker():
     """Run a block as a dispatcher-spawned worker scoped to ``task_id``.
 
