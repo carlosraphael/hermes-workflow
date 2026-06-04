@@ -54,6 +54,9 @@ def validate_template(t: Template) -> None:
     for s in t.stages:
         # gate vs role
         if s.gate is not None:
+            if s.gate != "human":
+                raise TemplateError(
+                    f"stage {s.id}: only 'gate: human' is supported in 0.1.0, got {s.gate!r}")
             if s.role is not None:
                 raise TemplateError(f"stage {s.id}: a gate stage must not declare a role")
         elif s.role is None:

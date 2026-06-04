@@ -23,6 +23,15 @@ def _ctx():
     return t, params, bindings
 
 
+def test_gate_assignee_constant_matches_version():
+    # graph.GATE_ASSIGNEE deliberately mirrors version.SENTINEL_GATE_ASSIGNEE
+    # (engine stays decoupled from the version module). Pin them equal so the
+    # two literals can never silently drift (D3-04).
+    from hermes_workflow.engine.graph import GATE_ASSIGNEE
+    from hermes_workflow.version import SENTINEL_GATE_ASSIGNEE
+    assert GATE_ASSIGNEE == SENTINEL_GATE_ASSIGNEE
+
+
 def test_prefix_only_at_start():
     t, params, bindings = _ctx()
     specs = cards_for_run(t, params, bindings, completed={}, existing=set())

@@ -105,6 +105,33 @@ stages:
         _v(y)
 
 
+def test_non_human_gate_rejected():
+    y = """
+name: t
+version: 0.1.0
+params: {}
+roles: { a: { lane: profile } }
+stages:
+  - { id: g1, gate: robot }
+"""
+    # match the rule-specific phrasing, not just "gate" (the role-conflict
+    # message also contains "gate") so this test pins the non-human rejection.
+    with pytest.raises(TemplateError, match="0.1.0"):
+        _v(y)
+
+
+def test_human_gate_accepted():
+    y = """
+name: t
+version: 0.1.0
+params: {}
+roles: { a: { lane: profile } }
+stages:
+  - { id: g1, gate: human }
+"""
+    _v(y)
+
+
 def test_fanout_stage_on_scratch_rejected():
     y = """
 name: t
