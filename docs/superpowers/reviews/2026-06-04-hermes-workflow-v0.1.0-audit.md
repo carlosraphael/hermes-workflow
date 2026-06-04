@@ -11,6 +11,8 @@
 
 **DO-NOT-SHIP** — 1 CRITICAL + 2 HIGH must be fixed first. The suite is green but does not cover the two HIGH fail-open/fail-silent regressions, and the CRITICAL blocks the only documented activation path.
 
+> **UPDATE 2026-06-04 — RESOLVED → SHIP.** All must-fix (CRITICAL + 2 HIGH) and should-fix (MEDIUM) findings, plus the §6 test gaps and the two confident LOW hardenings, are fixed and verified; the remaining LOW/INFO items are consciously deferred to 0.1.1. An independent post-fix re-audit returned **SHIP**. See [§7 Fixes Applied + Re-audit](#7-fixes-applied--re-audit-2026-06-04) at the end of this document.
+
 ## 2) MUST-FIX-BEFORE-RELEASE (CRITICAL + HIGH)
 
 | Severity | Title | Location | One-line fix |
@@ -80,3 +82,39 @@
 ---
 
 *Provenance: audit workflow run `wf_c0650497-26f`. Full per-dimension findings (including false-positives and the adversarial-verifier reasoning) are in that run's transcript.*
+
+---
+
+## 7) Fixes Applied + Re-audit (2026-06-04)
+
+Method: `superpowers:subagent-driven-development` — one fresh subagent per fix, TDD (failing test first → fix → full suite green → commit), with a two-stage (spec-compliance + code-quality) review between fixes. Suite: **117 → 137 tests, all green.** Branch `workflow/0.1`.
+
+### Fix map (commits on `workflow/0.1`)
+
+| Finding | Sev | Commit(s) | Fix |
+|---|---|---|---|
+| D7-001 | CRITICAL | `2e38b2f` | Activation documented via `config.yaml` `plugins.enabled` (the loader honors it by name/key for entry-point plugins); `_remediation`, README, operations.md updated; dead `plugins enable` removed + warned against. Re-proven end-to-end (`enabled` false→true). |
+| D1-01 | HIGH | `0b649b9` | base64-encode the sentinel/snapshot envelope payloads so author content containing `-->` (or a forged marker) can't truncate serialization; `extract_sentinel` stays fail-soft, `parse_root_body` stays raising. |
+| D6-01 | HIGH | `65e5470`, `a87be22` | Pin `on_tool_pre`'s own fail-closed `except` (returns a block dict on any internal error — never `None`/raise); message asserted to be a non-empty `str` (Hermes' block guard). |
+| D3-03/01/02 | MED | `cafb418` | Flat-`{"error":…}` contract: guard `workflow_start`'s post-pre-flight seed; wrap `cli_dispatch`; broaden `slash_dispatch`'s `except` — no raw tracebacks. |
+| D8-01 | MED | `9563697` | Pin the worktree repo HEAD at `workflow_start` into the snapshot; thread `base_ref` through start/reconcile/fan-out → `provision_worktree` for fan-out determinism across HEAD drift. |
+| D6-02 / D6-03 | MED | `1add026`, `a87be22` | Cover abandon's reclaim-running-FIRST branch (now order-pinned) and the post-hook self-gate skipping fan-out on a failed `kanban_complete`. |
+| D6-04/05/06/07 | §6 | `45c2a2c` | Sentinel non-spawnability (`dispatch_once` → `skipped_nonspawnable`), `LIFECYCLE_PREAMBLE` on materialized bodies, gate-less join waits for all fan-out instances, and a raw-SQLite regression meta-test. |
+| D1-03 / D3-04 | LOW | `5f4764f` | Reject any `gate` ≠ `human` (0.1.0 scope); pin `graph.GATE_ASSIGNEE == version.SENTINEL_GATE_ASSIGNEE`. |
+
+### Deferred to 0.1.1 (re-audit-confirmed safe to defer — none a hidden correctness/security blocker)
+
+D1-02 (expand_out *source* on scratch — producer's fan-out list flows via run metadata, not the filesystem; the *consumer* IS rejected on scratch), D3-05 (review-required backstop reads the 50-event-capped tail — purely diagnostic; the card still surfaces in `blocked_stages`), D5-01 (workspace normpath/containment — orchestrator-only, trusted author; the plugin never deletes paths and emits only `dir:`/`worktree:` kinds Hermes preserves), D7-002 (examples not in wheel — dev-repo docs, not runtime; load is via the entry point), D7-003 (wheel METADATA cosmetics), D10-1 (`package-data` glob — both `SKILL.md` verified present in the wheel), D9 (dead `project_plugin` param — pure YAGNI cleanup), D4-001 (doc drift — `kanban_link` internally calls `kb.link_tasks`, identical semantics).
+
+### Independent re-audit verdict — **SHIP**
+
+A separate adversarial re-audit (13 agents: one verifier per closed finding grounded in real Hermes v0.15.1 source + 4 regression sweeps + synthesis) returned **SHIP**: every must-fix/should-fix finding `closed` with `fix_correct` and `test_genuinely_pins` true; full suite green and deterministic (0 skips/xfails); engine purity holds (engine/lanes import zero `hermes_cli`; sole DB touch is `connect_closing` via Hermes' public API); no new regressions from the fixes; all 8 deferred-LOW items re-confirmed non-blocking. The CRITICAL was re-proven end-to-end with zero LLM.
+
+**Residual risks (recorded, non-blocking):**
+
+- **D6-01:** tests bracket the two post-sentinel call sites; a refactor hoisting only the *earliest* pre-sentinel lines above the `try` would still fail open with the tests green (current code is correct — the whole chain is inside the `try`).
+- **D8-01:** degraded-mode non-determinism only when `_capture_base_ref` returns `None` (0 worktree stages / *multiple distinct* worktree repos — out of 0.1.0 scope / unresolvable HEAD); the shipped single-repo fan-out always pins a real sha.
+- **D1-01:** `parse_root_body` uses the first snapshot marker — unreachable via author content (base64-buried); only an actor who already owns the raw root body verbatim could matter (outside the threat model).
+- **D6-07:** substring scan (not AST) — a comment/string containing a forbidden token false-positives; acceptable strictness for a safety invariant.
+
+*Provenance: fix session via subagent-driven-development; re-audit workflow run `wf_0ad694bc-c48`.*
