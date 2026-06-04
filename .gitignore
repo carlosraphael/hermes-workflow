@@ -1,0 +1,29 @@
+# Hermes reference checkout — ground-truth source, not part of this project
+/hermes-agent/
+
+# Scratch / tooling dirs
+/.firecrawl/
+/.tmp_grill/
+/.tmp_probe/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg
+
+# Runtime worktrees created by the workflow engine
+.hermes-workflow-worktrees/
+.worktrees/
+
+# Environments / editors / OS
+.venv/
+venv/
+.env
+.DS_Store
