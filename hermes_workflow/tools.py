@@ -100,22 +100,23 @@ def workflow_start(ctx, *, template_text, params, bindings, board=None):
     board = board or os.environ.get("HERMES_KANBAN_BOARD", _DEFAULT_BOARD)
     wb = WorkerBoard(ctx, board=board)
     root_body = build_root_body(template_text, params, bindings, PLUGIN_VERSION, SCHEMA_VERSION)
-    root_id = wb.create(
-        title=f"workflow:{t.name}",
-        assignee=SENTINEL_ROOT_ASSIGNEE,
-        workspace_kind="scratch",
-        body=root_body,
-    )
-
-    # The root is a completed blackboard: an orchestrator may complete any card,
-    # and a no-parent root is `ready`, which complete_task accepts.
+    # Post-pre-flight seeding is guarded: a board-write or worktree-provision
+    # failure returns a flat error (mirrors the reconcile guard) instead of a raw
+    # traceback. A partial seed is safe — workflow_reconcile re-drives missing cards.
+    # (The root is a completed blackboard: an orchestrator may complete any card,
+    # and a no-parent root is `ready`, which complete_task accepts.)
     try:
+        root_id = wb.create(
+            title=f"workflow:{t.name}",
+            assignee=SENTINEL_ROOT_ASSIGNEE,
+            workspace_kind="scratch",
+            body=root_body,
+        )
         wb.complete(task_id=root_id, summary="workflow root blackboard")
-    except BoardError as e:
-        return {"error": f"could not complete workflow root: {e}"}
-
-    rv = RunView.from_root(ctx, board=board, root_id=root_id)
-    materialize(ctx, board=board, root_id=root_id, runview=rv)
+        rv = RunView.from_root(ctx, board=board, root_id=root_id)
+        materialize(ctx, board=board, root_id=root_id, runview=rv)
+    except (BoardError, MaterializeError, subprocess.CalledProcessError) as e:
+        return {"error": f"workflow seed failed after pre-flight: {e}"}
     return {"root_id": root_id, "board": board}
 
 
@@ -618,7 +619,10 @@ def _dispatch_ns(ctx, ns):
 
 def cli_dispatch(ctx, args):
     """`hermes workflow ...` terminal handler (args already parsed by Hermes)."""
-    result = _dispatch_ns(ctx, args)
+    try:
+        result = _dispatch_ns(ctx, args)
+    except Exception as e:
+        result = {"error": f"workflow {getattr(args, 'wf_cmd', '?')} failed: {e}"}
     print(json.dumps(result, indent=2))
     return result
 
@@ -636,6 +640,6 @@ def slash_dispatch(ctx, raw_args):
     # error rather than a raw exception bubbling into the session.
     try:
         result = _dispatch_ns(ctx, ns)
-    except (OSError, json.JSONDecodeError) as e:
+    except Exception as e:
         result = {"error": f"workflow {ns.wf_cmd} failed: {e}"}
     return json.dumps(result, indent=2)
