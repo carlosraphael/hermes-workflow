@@ -1,0 +1,153 @@
+name: "🐛 Bug Report"
+description: Report a bug — a broken invariant, a crash, or incorrect run behaviour.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug in `hermes-workflow`.
+
+        **Before submitting**, please:
+        - Search [existing issues](https://github.com/carlosraphael/hermes-workflow/issues) to avoid duplicates.
+        - Upgrade to the latest `0.1.x` (`pip install -U hermes-workflow`) and confirm the bug still reproduces.
+        - If this is a **security** issue, do **not** file it here — follow [`SECURITY.md`](https://github.com/carlosraphael/hermes-workflow/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear description of what's broken. Name the invariant or behaviour you expected to hold.
+      placeholder: |
+        What happened? What did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal steps to trigger the bug. A failing test or a minimal `*.workflow.yaml` is the fastest path to a fix.
+      placeholder: |
+        1. Start a run: `workflow_start` with the template below
+        2. Worker completes stage X
+        3. The fan-out driver / completion gate does ...
+        4. Observed: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: template
+    attributes:
+      label: Minimal template / bindings (if applicable)
+      description: The smallest `*.workflow.yaml` (and `params` / `bindings`) that reproduces the issue. Redact anything sensitive.
+      render: yaml
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened? Include the full error / traceback if there is one.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of the plugin is involved? (See AGENTS.md#project-structure.)
+      multiple: true
+      options:
+        - Engine (template parse/validate, interpolate, graph, provenance, reconcile)
+        - Completion gate (pre_tool_call veto)
+        - Fan-out driver (post_tool_call hook)
+        - Materialization (CardSpecs → board cards)
+        - Tools (workflow_start / status / validate / reconcile / approve / abandon)
+        - CLI / slash (`hermes workflow`, `/workflow`)
+        - Board adapter / RunView
+        - Worktree / pre-flight
+        - Skills (workflow-author / workflow-orchestrator)
+        - Packaging / install (entry point, per-profile enablement)
+        - Documentation
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: lane
+    attributes:
+      label: Lane (if relevant)
+      description: Which lane was the affected stage bound to?
+      options:
+        - N/A
+        - profile
+        - codex
+
+  - type: input
+    id: workflow-version
+    attributes:
+      label: hermes-workflow Version
+      description: Output of `pip show hermes-workflow` (the `Version:` line).
+      placeholder: "0.1.2"
+    validations:
+      required: true
+
+  - type: input
+    id: hermes-version
+    attributes:
+      label: Hermes Agent Version
+      description: The Hermes Agent version the plugin is loaded into (`hermes version`).
+      placeholder: "0.15.1"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: e.g. Ubuntu 24.04, macOS 15.2, Windows 11
+      placeholder: macOS 15.2
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python Version
+      description: Output of `python --version` (the plugin requires >= 3.11).
+      placeholder: "3.11.9"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Traceback (optional)
+      description: |
+        Any extra error output or traceback. The `post_tool_call` driver is fail-open and **logs and swallows** —
+        the agent log is where its failures surface.
+      render: shell
+
+  - type: textarea
+    id: root-cause
+    attributes:
+      label: Root Cause Analysis (optional)
+      description: |
+        If you've traced the cause, share it — file path + line range and a code snippet massively speed up the fix.
+      placeholder: |
+        `veto.py:55` returns None on <case> instead of a block dict, so the gate fails open ...
+
+  - type: checkboxes
+    id: pr-ready
+    attributes:
+      label: Are you willing to submit a PR for this?
+      options:
+        - label: I'd like to fix this myself and submit a PR
