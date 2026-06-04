@@ -32,6 +32,24 @@ def test_hook_fans_out_on_scan_complete(fake_ctx, tmp_board, seed_run, as_worker
     assert rv.card_id_for(("approve", 0, 0))                                  # join created (R5)
 
 
+def test_hook_does_not_fan_out_on_failed_complete(fake_ctx, tmp_board, seed_run, as_worker, tmp_path):
+    from hermes_workflow.hooks import on_tool_done
+    from hermes_workflow.runview import RunView
+    repo = _init_git_repo(tmp_path)
+    seeded = seed_run(params={"repo": str(repo)})
+    meta = {"flaky": [{"test_id": "T1", "file": "a.py"}]}
+    # Same setup as the success fan-out test, but the kanban_complete RESULT signals
+    # failure -> the post-hook success self-gate (hooks.py:56-58) must skip fan-out.
+    tmp_board.complete(seeded.scan_id, metadata=meta)
+    for bad in (json.dumps({"ok": False}), json.dumps({"error": "blocked"})):
+        with as_worker(seeded.scan_id):
+            on_tool_done(ctx=fake_ctx, tool_name="kanban_complete",
+                         args={"task_id": seeded.scan_id, "metadata": meta},
+                         result=bad, task_id=seeded.scan_id)
+        rv = RunView.from_root(fake_ctx, board=tmp_board.name, root_id=seeded.root_id)
+        assert rv.card_id_for(("fix", 0, 0)) is None   # NO fan-out on a failed complete
+
+
 def test_hook_never_raises_on_garbage(fake_ctx, tmp_board):
     from hermes_workflow.hooks import on_tool_done
     # pure side-effect: any internal error is swallowed (fail-open). Must not raise.

@@ -145,6 +145,40 @@ def test_abandon_is_resilient_to_archive_failure(fake_ctx, tmp_board, tmp_path, 
     assert tmp_board.status(root) == "archived"
 
 
+def test_abandon_reclaims_running_worker_before_archiving(fake_ctx, tmp_board, tmp_path, monkeypatch):
+    from hermes_workflow.board import HostBoard
+    repo = _init_git_repo(tmp_path)
+    root = _start(fake_ctx, tmp_board, repo)
+    _advance_to_fanout(fake_ctx, tmp_board, root)
+
+    rv = RunView.from_root(fake_ctx, board=tmp_board.name, root_id=root)
+    fix0 = rv.card_id_for(("fix", 0, 0))
+
+    # Drive a fan-out card into 'running' via a real claim (ready -> running).
+    claimed = tmp_board.kb.claim_task(tmp_board.conn, fix0)
+    assert claimed is not None
+    assert tmp_board.status(fix0) == "running"
+
+    # Spy on reclaim to prove the reclaim-running-FIRST branch is exercised.
+    real_reclaim = HostBoard.reclaim
+    reclaimed = []
+    def spy_reclaim(self, cid):
+        reclaimed.append(cid)
+        return real_reclaim(self, cid)
+    monkeypatch.setattr(HostBoard, "reclaim", spy_reclaim)
+
+    r = workflow_abandon(fake_ctx, root_id=root, board=tmp_board.name,
+                         kb=tmp_board.kb, conn=tmp_board.conn)
+
+    # the running fix card was reclaimed before archiving ...
+    assert fix0 in reclaimed
+    assert not any(f["op"] == "reclaim" for f in r["failures"])
+    # ... and the whole run + root archived (full teardown).
+    rv2 = RunView.from_root(fake_ctx, board=tmp_board.name, root_id=root)
+    assert all(rv2.status[c] == "archived" for c in rv2.by_identity.values())
+    assert tmp_board.status(root) == "archived"
+
+
 def test_abandon_refuses_in_worker(as_worker, fake_ctx, tmp_board):
     with as_worker("t_w"):
         r = workflow_abandon(fake_ctx, root_id="t_x", board=tmp_board.name)
