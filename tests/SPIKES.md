@@ -420,3 +420,129 @@ for the block and restores the prior value (or pops it) on exit. It mutates
 `os.environ` directly with self-contained save/restore (not `monkeypatch`) so it
 can be entered/exited mid-test around a single tool call. Required `import
 contextlib` added to conftest (Task 3 had left it out as unused).
+
+## Spike 5 — abandon: leaves-first archive, host-only, worktree preserved
+Confirms the abandon design's archive step against real `hermes_cli.kanban_db`
+(no LLM). Test file: `tests/integration/test_spike_abandon.py`.
+
+### `archive_task(conn, task_id) -> bool` (`kanban_db.py:4486-4509`) **[test for return + leaves-first; source for the rest]**
+- Returns **`True`** on a real archive; **`False`** when already archived / not
+  found — guarded by `WHERE id=? AND status != 'archived'` + a `rowcount != 1`
+  check (`:4491-4495`). This is the idempotent guard (a second archive of the
+  same task → `False`). **[test]**
+- Nulls `claim_lock`, `claim_expires`, **`worker_pid`** in the same UPDATE
+  (`:4489-4490`). It does **NOT** SIGTERM/signal a worker — it only drops the
+  pid reference. (Killing a live worker is `reclaim_task`'s job; archive just
+  forgets the pid.) **[source]**
+- Ends any in-flight run via `_end_run(..., outcome="reclaimed",
+  status="reclaimed", summary="task archived with run still active")`
+  (`:4499-4503`) and appends an `archived` event (`:4504`). **[source]**
+- After committing, calls **`recompute_ready(conn)`** (`:4508`) because an
+  `archived` parent (like `done`) no longer blocks children — newly-unblocked
+  dependents are promoted immediately. This is the source of the transient-ready
+  hazard below. **[source]**
+- Contains **NO `_cleanup_workspace` call** → archive preserves ALL workspaces
+  (scratch/dir/worktree). **[source + test]**
+
+### Leaves-first vs parent-first — the transient-ready finding **[test]**
+- `parent = mk_card(title="parent")` (no parents) is **`ready` from birth**;
+  `child = mk_card(parents=[parent], assignee="real-profile")` is **`todo`**.
+- **Hazard (parent-first):** `archive_task(parent)` → its `recompute_ready`
+  promotes the `todo` child to **`ready`** (the child's only parent is now
+  `archived`, which satisfies promotion). Confirmed by
+  `test_parent_first_archive_transiently_promotes_child`.
+- **Safe (leaves-first):** archive the leaf `child` FIRST (→ `archived`), THEN
+  the `parent`. The parent's `recompute_ready` runs, but the child is already
+  `archived` and is NOT transiently re-promoted. Confirmed by
+  `test_leaves_first_archive_avoids_transient_ready`.
+- **WHY abandon must archive in reverse-topological (leaves-first) order:** to
+  avoid momentarily flipping an interior stage to `ready` (which a racing
+  dispatcher tick could otherwise claim) while tearing a workflow down.
+
+### Host-only archive — finding Y **[source]**
+- `tools/kanban_tools.py` registers **exactly 9** kanban MODEL tools
+  (`:1353-1430`): `kanban_show`, `kanban_list`, `kanban_complete`,
+  `kanban_block`, `kanban_heartbeat`, `kanban_comment`, `kanban_create`,
+  `kanban_unblock`, `kanban_link`.
+- There is **NO `kanban_archive` and NO `kanban_unlink`** model tool (grep:
+  none). Archive (and unlink) are reachable ONLY via the host `kb.*` layer
+  (`kb.archive_task`) — the model cannot self-archive. Abandon must therefore
+  run host-side. **(finding Y confirmed)**
+
+### Reclaim / terminate signatures (for "reclaim/terminate running workers BEFORE archiving") **[source]**
+Not exercised (no live workers in a no-LLM board) — recorded for the design step.
+- `reclaim_task(conn, task_id, *, reason=None, signal_fn=None) -> bool`
+  (`kanban_db.py:3273`): operator-driven immediate reclaim regardless of TTL.
+  Returns `False` if not in a reclaimable state (not `running` and
+  `claim_lock IS NULL`, `:3297-3299`); on success resets to `ready`, nulls
+  claim/`worker_pid`, ends the run `reclaimed`, appends a `reclaimed` event,
+  and clears the failure counter (`:3304-3339`). Calls
+  `_terminate_reclaimed_worker(...)` to actually signal the worker (`:3301`).
+- `_terminate_reclaimed_worker(pid, claim_lock, *, signal_fn=None) -> dict[str, Any]`
+  (`kanban_db.py:4939`; also used at `:3229`, `:5229`): the path that SIGTERMs a
+  reclaimed worker (signal injectable via `signal_fn`), returning a termination
+  metadata dict. **This — not `archive_task` — is what kills a worker.** So the
+  abandon order is: `reclaim_task` (terminates the worker) THEN `archive_task`
+  (forgets the pid, marks archived), leaves-first.
+
+### Workspace preservation **[source + test]**
+- `_cleanup_workspace(conn, task_id)` (`kanban_db.py:3766-3783`) is called ONLY
+  from the COMPLETION path (`complete_task`), and even there removes ONLY
+  `scratch` workspaces — `worktree` and `dir` are "intentionally preserved"
+  (docstring `:3771-3772`, guard `:3783`). **[source]**
+- Archive never calls it → **archive preserves ALL workspaces**. Verified by
+  `test_archive_preserves_dir_workspace`: a `dir` workspace with a sentinel
+  file survives `archive_task` untouched. (`create_task` records
+  `workspace_path` for `dir`/`worktree` without provisioning the dir,
+  `:2132-2137`/`:2176-2206` — so the sentinel-file test is clean.) **[test]**
+
+### Plan carry-forward corrections (the plan's literal Task 5 code was buggy) **[test]**
+- The plan used **`role_assignee=`** — the real `mk_card`/`Board.create` kwarg is
+  **`assignee=`** (`tests/conftest.py:61`). Used `assignee="real-profile"`.
+- The plan asserted `status(parent) != "ready"` on a freshly-created no-parent
+  card — that is **wrong**: a no-parent card is `ready` from birth, so the
+  assertion fails. This was a PLAN TEST-CODE bug, NOT a spike-stop; the
+  underlying behavior (leaves-first avoids transient-ready) is intact. The
+  corrected tests assert on the CHILD's status across the two archive orders,
+  which is what actually demonstrates the hazard.
+
+## Reference signatures (confirmed by source read; not behavior-tested) **[source]**
+
+These host-layer (`kb.*`) signatures are confirmed against the pinned source for the
+Phase-0 Definition of Done; they are read-only references the Phase-1+ board adapter /
+reconcile code will call (no model tool exists for `unlink`/`archive` — finding Y).
+
+### `list_tasks` (`hermes_cli/kanban_db.py:2267-2279`)
+```python
+list_tasks(conn, *, assignee=None, status=None, tenant=None, session_id=None,
+           include_archived=False, limit=None, order_by=None,
+           workflow_template_id=None, current_step_key=None) -> list[Task]
+```
+- Keyword-only after `conn`; `status` validated against `VALID_STATUSES` (raises `ValueError`).
+- Orchestrator-only board-wide sweep (finding L: workers can't `kanban_list`; the
+  list rows carry **no body**). Use for board-wide sweeps / reconcile dedup, NOT for
+  per-run enumeration (which is a link-walk from the root via `get_task`).
+
+### `unlink_tasks` (`hermes_cli/kanban_db.py:2409`)
+```python
+unlink_tasks(conn, parent_id, child_id) -> bool
+```
+- Host-only edge removal — **there is NO `kanban_unlink` model tool** (finding Y).
+  Returns `True` if an edge was removed. Reconcile dedup re-wire is two ordered host
+  steps: `kb.link_tasks(winner→join)` THEN `kb.archive_task(loser)` (link + archive
+  cannot share one txn; the archived loser is a satisfied parent so its dangling edge
+  is harmless — §5.7).
+
+### `latest_run` (`hermes_cli/kanban_db.py:7398`)
+```python
+latest_run(conn, task_id) -> Optional[Run]
+```
+- Returns the most recent `task_runs` row as a `Run`, or `None`.
+- `Run` (dataclass, `:825-851`) fields: `id, task_id, profile, step_key, status,
+  claim_lock, claim_expires, worker_pid, max_runtime_seconds, last_heartbeat_at,
+  started_at, ended_at, outcome, summary, metadata, error`.
+- **`Run.metadata`** is the structured handoff dict (parsed from JSON). It persists
+  indefinitely (NO time-GC — findings W/D1; only `task_events` + worker logs are
+  30-day GC'd). Reconcile reads this UNBOUNDED column directly, NOT the ~4 KB-truncated
+  `build_worker_context` view (finding R). This is the durable source-handoff input the
+  graph function re-runs from.
