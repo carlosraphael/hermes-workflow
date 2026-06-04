@@ -1953,7 +1953,7 @@ git commit -m "feat(hook): pre_tool_call completion gate (expand_out shape+max, 
 - Create: `hermes_workflow/preflight.py`
 - Test: `tests/integration/test_workflow_start.py`
 
-- [ ] **Step 1: Write failing tests (refuse in worker; reject verify; seed root + prefix)**
+- [x] **Step 1: Write failing tests (refuse in worker; reject verify; seed root + prefix)**
 
 ```python
 # tests/integration/test_workflow_start.py
@@ -1983,9 +1983,9 @@ def test_start_seeds_root_and_prefix(fake_ctx, tmp_board, stub_preflight_ok, mon
 
 (Define `_TPL` in the test as the `fix-flaky-tests` YAML; add a `stub_preflight_ok` fixture monkeypatching `preflight.probe_profiles` to return all-OK so this test needs no extra profiles.)
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement pre-flight probe**
+- [x] **Step 3: Implement pre-flight probe**
 
 ```python
 # hermes_workflow/preflight.py
@@ -2030,7 +2030,7 @@ def _base_env(profile):
 
 > Replace the in-`-c` attribute access with the exact `list_plugins()` shape recorded in Task 2's `SPIKES.md`.
 
-- [ ] **Step 4: Implement `workflow_start`**
+- [x] **Step 4: Implement `workflow_start`**
 
 ```python
 # hermes_workflow/tools.py
@@ -2092,7 +2092,7 @@ def _complete_root(ctx, board, root_id):
 
 > The materializer's `cards_for_run` with `completed={}` returns only the prefix (verified in Task 11), so `workflow_start` reuses it — no separate prefix logic. Confirm `kanban_complete` on a just-created card is allowed in orchestrator context (finding A2: orchestrator may complete any card); if the root must be created already-done, use the `initial_status` create param instead.
 
-- [ ] **Step 5: Run + commit**
+- [x] **Step 5: Run + commit**
 
 Run: `pytest tests/integration/test_workflow_start.py -v` → PASS.
 
@@ -2109,7 +2109,7 @@ git commit -m "feat(tool): workflow_start (validate, reject verify, per-profile 
 - Modify: `hermes_workflow/tools.py`
 - Test: `tests/integration/test_workflow_status_reconcile.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/integration/test_workflow_status_reconcile.py
@@ -2136,9 +2136,9 @@ def test_reconcile_recreates_missing_fanout_and_relinks_join(fake_ctx, tmp_board
     assert rv.card_id_for(("fix", 0, 0)) and rv.card_id_for(("fix", 1, 0))   # missing one recreated
 ```
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # hermes_workflow/tools.py  (append)
@@ -2209,7 +2209,7 @@ def _root_snapshot(ctx, board, root_id):
     return parse_root_body(WorkerBoard(ctx, board=board).show(root_id)["body"])
 ```
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/integration/test_workflow_status_reconcile.py -v` → PASS.
 
@@ -2227,7 +2227,7 @@ git commit -m "feat(tool): workflow_status (rollup+blocked+awaiting), validate, 
 - Create: `hermes_workflow/sweep.py`
 - Test: `tests/integration/test_approve_abandon.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/integration/test_approve_abandon.py
@@ -2253,9 +2253,9 @@ def test_abandon_archives_whole_run_leaves_first(fake_ctx, tmp_board, started_ru
     assert "orphaned_branches" in r
 ```
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement the sweep + commands**
+- [x] **Step 3: Implement the sweep + commands**
 
 ```python
 # hermes_workflow/sweep.py
@@ -2332,11 +2332,11 @@ def workflow_abandon(ctx, *, root_id, board=None, kb=None, conn=None):
 
 > Provide `_kb()`, `_conn(board)`, `_parents(ctx,board,cid)` (from `kanban_show`), and `_orphaned_branches(rv)` (derive `wf/<root>/<stage>/<idx>` branch names from sentinels of worktree stages). Use the recorded `kb.reclaim_task`/`kb.archive_task` signatures from Task 5's `SPIKES.md`.
 
-- [ ] **Step 4: Add the dedup pass to `workflow_reconcile`**
+- [x] **Step 4: Add the dedup pass to `workflow_reconcile`**
 
 Append to `workflow_reconcile` (Task 20): after create-missing, group existing cards by sentinel identity; for any identity with >1 card, call `engine.reconcile.pick_winner(rows)`, then `kb.link_tasks(winner→join)` for the winner where needed and `kb.archive_task(loser)` for each loser (ordered link-then-archive; no shared txn; archived loser is a satisfied parent). Add a test asserting the `done` duplicate is kept and the empty duplicate archived.
 
-- [ ] **Step 5: Run + commit**
+- [x] **Step 5: Run + commit**
 
 Run: `pytest tests/integration/test_approve_abandon.py -v` → PASS.
 
@@ -2353,7 +2353,7 @@ git commit -m "feat(tool): approve + abandon (reclaim-then-archive leaves-first,
 - Modify: `hermes_workflow/__init__.py`
 - Test: `tests/integration/test_register_surfaces.py`
 
-- [ ] **Step 1: Write the failing test (register wires every surface without crashing)**
+- [x] **Step 1: Write the failing test (register wires every surface without crashing)**
 
 ```python
 # tests/integration/test_register_surfaces.py
@@ -2373,9 +2373,9 @@ def test_register_wires_tools_hooks_cli(recording_ctx):
 
 (Add a `recording_ctx` fixture: a fake ctx recording `register_tool/register_hook/register_cli_command/register_command` names.)
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement `register`**
+- [x] **Step 3: Implement `register`**
 
 ```python
 # hermes_workflow/__init__.py  (replace the skeleton register)
@@ -2403,7 +2403,7 @@ def register(ctx):
 
 > Define `tools.TOOL_SPECS` (name, handler adapting the `args: dict` tool calling-convention to the keyword functions, OpenAI-style schema), `tools.cli_setup`/`cli_dispatch`/`slash_dispatch`. Each tool handler must return a JSON string (`json.dumps`) and never raise (catch → `{"error": ...}`) per Hermes' tool contract. Confirm `ctx.register_*` signatures against `build-a-hermes-plugin` docs + Task 0.
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/integration/test_register_surfaces.py tests/integration/test_plugin_loads.py -v` → PASS.
 
