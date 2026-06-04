@@ -1,0 +1,105 @@
+name: release
+
+# Build sdist + wheel and publish to PyPI on a clean `vMAJOR.MINOR.PATCH` tag,
+# using PyPI Trusted Publishing (OIDC) — no API token is stored in the repo.
+#
+# OUT-OF-BAND PREREQUISITES (must be done once, by a maintainer — see the
+# release checklist in the PR that adds this file). Until these are done this
+# workflow will run on a tag push but the publish step will FAIL at the OIDC
+# exchange:
+#   1. Register the project on PyPI: https://pypi.org/manage/projects/ (the
+#      name `hermes-workflow` must be claimed by the publishing account).
+#   2. Configure a Trusted Publisher on the PyPI project pointing at this repo:
+#      owner `carlosraphael`, repo `hermes-workflow`, workflow `release.yml`,
+#      environment `pypi`.
+#   3. Create a GitHub Environment named `pypi` (Settings → Environments).
+#   4. Make the repository public (Trusted Publishing requires it for the OIDC
+#      claims GitHub presents to PyPI).
+#
+# To dry-run before #1–#4 are in place, push a tag and watch the `build` job —
+# it produces the artifacts without needing any of the above; only `publish`
+# requires the trusted-publisher config.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'   # clean vMAJOR.MINOR.PATCH only (e.g. v0.1.3)
+  workflow_dispatch:               # manual escape hatch from the Actions tab
+    inputs:
+      ref:
+        description: 'Existing tag to build & publish (e.g. v0.1.3).'
+        required: true
+        type: string
+
+# Default the token to read-only; the publish job escalates to id-token: write.
+permissions:
+  contents: read
+
+# Never let two publishes race (e.g. two tags pushed back-to-back).
+concurrency:
+  group: pypi-publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      # Actions pinned by full commit SHA per CONTRIBUTING.md#dependency-pinning-policy.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+
+      - name: Verify the tag matches the package version
+        run: |
+          tag="${{ inputs.ref || github.ref_name }}"
+          tag_version="${tag#v}"
+          pkg_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          echo "tag=$tag_version  pyproject=$pkg_version"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag '$tag' does not match pyproject version '$pkg_version' — bump the version or fix the tag."
+            exit 1
+          fi
+
+      - name: Build
+        run: |
+          python -m pip install --upgrade build
+          python -m build --sdist --wheel
+
+      - name: Verify artifacts exist
+        run: |
+          ls -l dist/
+          test -n "$(ls dist/*.tar.gz 2>/dev/null)" || { echo '::error::no sdist built'; exit 1; }
+          test -n "$(ls dist/*.whl 2>/dev/null)"    || { echo '::error::no wheel built'; exit 1; }
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/hermes-workflow
+    permissions:
+      id-token: write   # OIDC — the only credential Trusted Publishing needs
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          skip-existing: true
