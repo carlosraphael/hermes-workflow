@@ -327,3 +327,96 @@ Not exercised by this spike's tests — the tests use the kb layer directly.
   `parent_agent` from `self._manager._cli_ref` when available, then returns
   `registry.dispatch(tool_name, args, **kwargs)` — a JSON STRING (same format as
   model tool calls). Matches the design's "JSON string" claim.
+
+## Spike 4 — worker cross-task comment (version-gate "visible refuse" basis)
+
+Confirmed against real source (Hermes v0.15.1 @ c47b9d12). Test:
+`tests/integration/test_spike_version_gate.py`. Uses the new `as_worker`
+fixture in `tests/conftest.py` (a context manager that pins
+`HERMES_KANBAN_TASK` to a worker's own card and restores it on exit).
+
+The §2 version gate, on a `schema_version` mismatch, must do a "visible
+refuse": post a comment on the workflow ROOT (so the human/next worker sees
+why) AND veto the tool via `{"action":"block",...}`. Neither step may raise
+(a raise fails open — see Spike 1). This spike confirms the comment step is
+permitted from a worker context and that the comment author can't be forged.
+
+**Coverage legend** (same convention as Spikes 1–3):
+- **[test]** = directly asserted by `test_spike_version_gate.py`.
+- **[source]** = confirmed by reading the pinned Hermes source, NOT exercised
+  by a test (re-verify if Hermes moves).
+
+### Cross-task commenting is UNRESTRICTED; author is FORCED **[test]**
+A worker (process with `HERMES_KANBAN_TASK` set to its OWN card, `other`) can
+`kanban_comment` on a FOREIGN card (the `root`):
+- `_handle_comment({"task_id": root, "body": "…"})` returns `ok: true` even
+  though `root` is not the worker's task — NO ownership check fires. The exact
+  return STRING observed under a tmp board:
+  ```json
+  {"ok": true, "task_id": "t_28948454", "comment_id": 1}
+  ```
+- **Author is forced**, not taken from args: calling with an explicit
+  `args["author"] = "hermes-system"` still records author `"worker"`
+  (= `os.environ.get("HERMES_PROFILE") or "worker"`; `HERMES_PROFILE` is unset
+  in the test env). The forged value is IGNORED. Asserted by reading the
+  persisted comment back via `kb.list_comments(conn, root)[0].author`
+  (a `Comment` dataclass, `kanban_db.py:880`, `.author` ATTRIBUTE).
+
+### CONFIRMED `_handle_comment` signature + return contract (`tools/kanban_tools.py`)
+```python
+_handle_comment(args: dict, **kw) -> str
+```
+- Reads `args.get("task_id")` (required; `tool_error("task_id is required …")`
+  if missing/falsy, `:690-694`) and `args.get("body")` (required; `tool_error`
+  if missing/blank, `:695-696`). Optional `args.get("board")` (`:708`) forwarded
+  to `_connect`. **[source]**
+- **Author forcing** (`:707`): `author = os.environ.get("HERMES_PROFILE") or
+  "worker"` — caller-supplied `args["author"]` is intentionally IGNORED. The
+  `:698-706` comment explains why: comments are injected into the NEXT worker's
+  system prompt as `**{author}** (ts): {body}`, so accepting an author override
+  would let a worker forge a `hermes-system`-looking directive and poison
+  future-worker context. **[test + source]**
+- **No ownership check** — `_handle_comment` never calls
+  `_enforce_worker_task_ownership`. `:705-706` records the deliberate design:
+  "Cross-task commenting itself remains unrestricted (see #19713) — comments are
+  the deliberate handoff channel between tasks." **[test + source]**
+- Connects via `_connect(board=board)` (`:710`) → `kb.connect(board=…)`. With
+  `board=None` the resolution chain is `HERMES_KANBAN_DB` → `HERMES_KANBAN_BOARD`
+  env → symlink → `default` (`:164-176`). The `tmp_board` fixture pins
+  `HERMES_KANBAN_BOARD="test"` under `HERMES_HOME=<tmp_path>`, so the handler's
+  own (separate) connection resolves the SAME board file the fixture wrote to —
+  the persisted comment reads back fine. **[test confirms: read-back works]**
+- Success → `_ok(task_id=tid, comment_id=cid)` = `json.dumps({"ok": True,
+  "task_id": tid, "comment_id": cid})` (a JSON STRING). Failure → `tool_error(…)`
+  (a JSON string containing `error`/`ok:false`). **[test + source]**
+- `add_comment(conn, task_id, author, body) -> int` (`kanban_db.py:2465`) raises
+  `ValueError("unknown task …")` if the task row is absent — surfaced by
+  `_handle_comment` as `tool_error("kanban_comment: …")`. Not hit here. **[source]**
+
+### CONTRAST — complete/block ARE ownership-enforced (NOT tested, for understanding) **[source]**
+`_enforce_worker_task_ownership(tid) -> Optional[str]` (`tools/kanban_tools.py:132-161`):
+reads `env_tid = os.environ.get("HERMES_KANBAN_TASK")`; if set (= worker context)
+and `tid != env_tid`, returns a `tool_error` refusing to mutate the foreign task
+("Use kanban_comment to hand off information …"). `kanban_complete`/`kanban_block`/
+`kanban_heartbeat` call this and reject foreign task ids (see #19534). Orchestrator
+profiles (kanban enabled but NO `HERMES_KANBAN_TASK`) are exempt. **Comments are
+the deliberate exception** — which is exactly why the gate's visible-refuse can
+comment on the root from a worker.
+
+### Why the gate MUST be worker-side + exception-proof — `resolve_profile_env(assignee)` **[source]**
+The dispatcher resolves the worker's `HERMES_HOME` from the ASSIGNEE's profile:
+`env["HERMES_HOME"] = resolve_profile_env(profile_arg)` (`hermes_cli/kanban_db.py:6468`,
+where `profile_arg` is the assignee profile; falls back to `HERMES_PROFILE` deferral
+on `FileNotFoundError`, `:6469-6474`). So the hook + veto execute under the WORKER
+profile's home — and the plugin VERSION installed in that home CAN differ from the
+orchestrator's stamped `schema_version`. That is why the §2 version gate must run
+worker-side (it's the only place that sees the worker's actual installed version)
+AND must be exception-proof (a `pre_tool_call` raise fails open, per Spike 1, so it
+must veto by RETURNING the block dict and post the refuse-comment without raising).
+
+### Fixture note — `as_worker` (`tests/conftest.py`) **[test]**
+`as_worker(task_id)` is a context manager that sets `HERMES_KANBAN_TASK=task_id`
+for the block and restores the prior value (or pops it) on exit. It mutates
+`os.environ` directly with self-contained save/restore (not `monkeypatch`) so it
+can be entered/exited mid-test around a single tool call. Required `import
+contextlib` added to conftest (Task 3 had left it out as unused).

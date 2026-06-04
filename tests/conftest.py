@@ -1,5 +1,5 @@
 # tests/conftest.py
-import os, sys, pathlib, pytest
+import contextlib, os, sys, pathlib, pytest
 
 HERMES_ROOT = pathlib.Path(
     os.environ.get("HERMES_AGENT_ROOT", "/Users/carlos/cortex-workspace/hermes-agent")
@@ -102,3 +102,26 @@ def complete_card(tmp_board):
         return tmp_board.complete(tid, **kw)
 
     return _c
+
+
+@pytest.fixture
+def as_worker():
+    """Run a block as a dispatcher-spawned worker scoped to ``task_id``.
+
+    Sets ``HERMES_KANBAN_TASK`` (what _enforce_worker_task_ownership reads to
+    decide a process is a worker, and what _handle_comment ignores for author)
+    for the duration, restoring the prior value on exit. Self-contained
+    save/restore so it composes with tests that don't otherwise touch the env.
+    """
+    @contextlib.contextmanager
+    def _ctx(task_id):
+        prev = os.environ.get("HERMES_KANBAN_TASK")
+        os.environ["HERMES_KANBAN_TASK"] = task_id
+        try:
+            yield
+        finally:
+            if prev is None:
+                os.environ.pop("HERMES_KANBAN_TASK", None)
+            else:
+                os.environ["HERMES_KANBAN_TASK"] = prev
+    return _ctx
