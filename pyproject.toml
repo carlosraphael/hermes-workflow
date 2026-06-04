@@ -1,0 +1,15 @@
+[project]
+name = "hermes-workflow"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6"]
+
+[project.entry-points."hermes_agent.plugins"]
+hermes-workflow = "hermes_workflow"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires a real Hermes board + plugin load (no LLM)"]
