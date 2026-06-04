@@ -2424,7 +2424,7 @@ git commit -m "feat: register tools + hooks + CLI + slash + bundled skills"
 - Create: `hermes_workflow/lanes/__init__.py`, `hermes_workflow/lanes/presets.py`
 - Test: `tests/unit/test_lane_presets.py`
 
-- [ ] **Step 1: Write the failing lane-preset test**
+- [x] **Step 1: Write the failing lane-preset test**
 
 ```python
 # tests/unit/test_lane_presets.py
@@ -2437,9 +2437,9 @@ def test_codex_lane_uses_bundled_skill_name():
     assert lane_skill("profile") is None
 ```
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement the preset**
+- [x] **Step 3: Implement the preset**
 
 ```python
 # hermes_workflow/lanes/presets.py
@@ -2451,7 +2451,7 @@ def lane_skill(lane: str) -> str | None:
     return _LANE_SKILL.get(lane)
 ```
 
-- [ ] **Step 4: Write the two SKILL.md files**
+- [x] **Step 4: Write the two SKILL.md files**
 
 `workflow-author/SKILL.md` frontmatter + body: how to write a `*.workflow.yaml` (params/roles/lanes/stages/expand/expand_out/gate/workspace), the 0.1.0 constraints (no `verify.command`, no nested expand, `${params.*}`-only in `workspace:`), and `workflow_validate` usage.
 
@@ -2469,7 +2469,7 @@ metadata:
 ---
 ```
 
-- [ ] **Step 5: Run + commit**
+- [x] **Step 5: Run + commit**
 
 Run: `pytest tests/unit/test_lane_presets.py -v` → PASS.
 
@@ -2487,7 +2487,7 @@ git commit -m "feat: bundled author/orchestrator skills + codex lane preset (reu
 - Create: `examples/build-hermes-plugin.workflow.yaml`
 - Test: `tests/unit/test_examples_validate.py`
 
-- [ ] **Step 1: Write the failing test (both examples parse + validate)**
+- [x] **Step 1: Write the failing test (both examples parse + validate)**
 
 ```python
 # tests/unit/test_examples_validate.py
@@ -2502,13 +2502,13 @@ def test_example_validates(name):
     validate_template(parse_template((EX / f"{name}.workflow.yaml").read_text()))
 ```
 
-- [ ] **Step 2: Run → FAIL** (files absent).
+- [x] **Step 2: Run → FAIL** (files absent).
 
-- [ ] **Step 3: Write `fix-flaky-tests.workflow.yaml`** (exactly the §7 example, minus any `verify` block — commit-clean is implicit for the worktree stage).
+- [x] **Step 3: Write `fix-flaky-tests.workflow.yaml`** (exactly the §7 example, minus any `verify` block — commit-clean is implicit for the worktree stage).
 
-- [ ] **Step 4: Write `build-hermes-plugin.workflow.yaml`** (the §15 shape: `spec` with `expand_out` = list of tools; `implement` fanned out via codex on per-tool worktrees; `integrate`; `test`; `review` gate; `enable` — no `verify.command`).
+- [x] **Step 4: Write `build-hermes-plugin.workflow.yaml`** (the §15 shape: `spec` with `expand_out` = list of tools; `implement` fanned out via codex on per-tool worktrees; `integrate`; `test`; `review` gate; `enable` — no `verify.command`).
 
-- [ ] **Step 5: Run + commit**
+- [x] **Step 5: Run + commit**
 
 Run: `pytest tests/unit/test_examples_validate.py -v` → PASS.
 
