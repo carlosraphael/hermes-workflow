@@ -1,10 +1,21 @@
 from __future__ import annotations
+import base64
 import json
 from dataclasses import dataclass, asdict
 
 _SENTINEL_OPEN = "<!--hermes-workflow:sentinel "
 _SENTINEL_CLOSE = "-->"
 _SNAPSHOT_OPEN = "<!--hermes-workflow:snapshot "
+
+
+def _encode(obj) -> str:
+    # Base64 alphabet is [A-Za-z0-9+/=], which cannot contain '-->', so the
+    # first '-->' after the open marker is always the genuine terminator.
+    return base64.b64encode(json.dumps(obj).encode("utf-8")).decode("ascii")
+
+
+def _decode(raw: str):
+    return json.loads(base64.b64decode(raw.encode("ascii"), validate=True).decode("utf-8"))
 
 
 @dataclass(frozen=True)
@@ -29,7 +40,7 @@ class CompiledSnapshot:
 
 
 def embed_sentinel(body: str, s: Sentinel) -> str:
-    return f"{_SENTINEL_OPEN}{json.dumps(asdict(s))}{_SENTINEL_CLOSE}\n{body}"
+    return f"{_SENTINEL_OPEN}{_encode(asdict(s))}{_SENTINEL_CLOSE}\n{body}"
 
 
 def extract_sentinel(body: str) -> Sentinel | None:
@@ -41,7 +52,7 @@ def extract_sentinel(body: str) -> Sentinel | None:
         return None
     raw = body[i + len(_SENTINEL_OPEN):j].strip()
     try:
-        return Sentinel(**json.loads(raw))
+        return Sentinel(**_decode(raw))
     except Exception:
         return None
 
@@ -50,13 +61,18 @@ def build_root_body(template_yaml: str, params: dict, bindings: dict,
                     plugin_version: str, schema_version: str) -> str:
     payload = {"template_yaml": template_yaml, "params": params, "bindings": bindings,
                "plugin_version": plugin_version, "schema_version": schema_version}
-    return f"{_SNAPSHOT_OPEN}{json.dumps(payload)}{_SENTINEL_CLOSE}\n# hermes-workflow run\n"
+    return f"{_SNAPSHOT_OPEN}{_encode(payload)}{_SENTINEL_CLOSE}\n# hermes-workflow run\n"
 
 
 def parse_root_body(body: str) -> CompiledSnapshot:
+    # RAISES by design on a malformed/non-snapshot body: callers
+    # (tools.py::_root_snapshot, hooks.py) wrap this in try/except and rely on
+    # it raising. A corrupt root snapshot must wedge loudly (fail-closed at the
+    # veto / WorkflowError at reconcile), never fail soft. Do NOT add a
+    # swallowing try/except here.
     i = body.find(_SNAPSHOT_OPEN)
     j = body.find(_SENTINEL_CLOSE, i)
-    payload = json.loads(body[i + len(_SNAPSHOT_OPEN):j].strip())
+    payload = _decode(body[i + len(_SNAPSHOT_OPEN):j].strip())
     return CompiledSnapshot(**payload)
 
 
