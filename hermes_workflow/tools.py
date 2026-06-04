@@ -62,6 +62,31 @@ def _remediation(profile: str, err) -> str:
     return f"load error: {err}"
 
 
+def _capture_base_ref(t, params):
+    """Pin the run's worktree repo HEAD at start so fan-out worktrees branch from
+    a fixed commit even if HEAD moves mid-run (0.1.0 locked decision). Returns a
+    commit sha, or None when there is no single worktree repo or git can't resolve
+    it (then provisioning falls back to live HEAD — current behavior, no regression).
+    """
+    from hermes_workflow.engine.interpolate import interpolate
+    repos = set()
+    for s in t.stages:
+        if s.workspace.startswith("worktree:"):
+            try:
+                repos.add(interpolate(s.workspace, params=params, expand_vars={}).partition(":")[2])
+            except Exception:
+                return None
+    if len(repos) != 1:           # 0 worktree stages, or (out-of-0.1.0-scope) multiple distinct repos
+        return None
+    repo = next(iter(repos))
+    try:
+        r = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
+                           capture_output=True, text=True, check=True)
+        return r.stdout.strip() or None
+    except Exception:
+        return None
+
+
 def workflow_start(ctx, *, template_text, params, bindings, board=None):
     """Validate, pre-flight, then seed a workflow run (root + dynamic-free prefix).
 
@@ -99,7 +124,8 @@ def workflow_start(ctx, *, template_text, params, bindings, board=None):
 
     board = board or os.environ.get("HERMES_KANBAN_BOARD", _DEFAULT_BOARD)
     wb = WorkerBoard(ctx, board=board)
-    root_body = build_root_body(template_text, params, bindings, PLUGIN_VERSION, SCHEMA_VERSION)
+    base_ref = _capture_base_ref(t, params)
+    root_body = build_root_body(template_text, params, bindings, PLUGIN_VERSION, SCHEMA_VERSION, base_ref)
     # Post-pre-flight seeding is guarded: a board-write or worktree-provision
     # failure returns a flat error (mirrors the reconcile guard) instead of a raw
     # traceback. A partial seed is safe — workflow_reconcile re-drives missing cards.
@@ -114,7 +140,7 @@ def workflow_start(ctx, *, template_text, params, bindings, board=None):
         )
         wb.complete(task_id=root_id, summary="workflow root blackboard")
         rv = RunView.from_root(ctx, board=board, root_id=root_id)
-        materialize(ctx, board=board, root_id=root_id, runview=rv)
+        materialize(ctx, board=board, root_id=root_id, runview=rv, base_ref=base_ref)
     except (BoardError, MaterializeError, subprocess.CalledProcessError) as e:
         return {"error": f"workflow seed failed after pre-flight: {e}"}
     return {"root_id": root_id, "board": board}
@@ -272,9 +298,10 @@ def workflow_reconcile(ctx, *, root_id, board=None, kb=None, conn=None):
 
     board = board or os.environ.get("HERMES_KANBAN_BOARD", _DEFAULT_BOARD)
     try:
-        t = parse_template(_root_snapshot(ctx, board, root_id).template_yaml)
+        snap = _root_snapshot(ctx, board, root_id)
+        t = parse_template(snap.template_yaml)
         rv = RunView.from_root(ctx, board=board, root_id=root_id)
-        created = materialize(ctx, board=board, root_id=root_id, runview=rv)
+        created = materialize(ctx, board=board, root_id=root_id, runview=rv, base_ref=snap.base_ref)
         rv2 = RunView.from_root(ctx, board=board, root_id=root_id)
     except (WorkflowError, BoardError, TemplateError, MaterializeError, subprocess.CalledProcessError) as e:
         return {"error": str(e)}

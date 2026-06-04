@@ -37,6 +37,7 @@ class CompiledSnapshot:
     bindings: dict
     plugin_version: str
     schema_version: str
+    base_ref: str | None = None
 
 
 def embed_sentinel(body: str, s: Sentinel) -> str:
@@ -58,9 +59,10 @@ def extract_sentinel(body: str) -> Sentinel | None:
 
 
 def build_root_body(template_yaml: str, params: dict, bindings: dict,
-                    plugin_version: str, schema_version: str) -> str:
+                    plugin_version: str, schema_version: str, base_ref=None) -> str:
     payload = {"template_yaml": template_yaml, "params": params, "bindings": bindings,
-               "plugin_version": plugin_version, "schema_version": schema_version}
+               "plugin_version": plugin_version, "schema_version": schema_version,
+               "base_ref": base_ref}
     return f"{_SNAPSHOT_OPEN}{_encode(payload)}{_SENTINEL_CLOSE}\n# hermes-workflow run\n"
 
 

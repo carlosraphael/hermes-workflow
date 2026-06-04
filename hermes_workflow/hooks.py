@@ -82,7 +82,7 @@ def on_tool_done(*, ctx, tool_name, args, result, task_id, **kwargs):
             return  # visible refuse: NO fan-out, NO raise
 
         rv = RunView.from_root(ctx, board=wb.board, root_id=sentinel.workflow_root)
-        materialize(ctx, board=wb.board, root_id=sentinel.workflow_root, runview=rv)
+        materialize(ctx, board=wb.board, root_id=sentinel.workflow_root, runview=rv, base_ref=snap.base_ref)
     except Exception:
         log.exception("hermes-workflow fan-out hook failed (swallowed)")
 
