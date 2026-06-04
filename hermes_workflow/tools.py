@@ -12,16 +12,19 @@ can't load the plugin (or a codex lane is missing its binary/skill), we return
 a remediation map and create NOTHING. Cards are only ever created after the
 probe is fully green.
 """
+import contextlib
 import os
 import subprocess
 
-from hermes_workflow.board import BoardError, WorkerBoard
-from hermes_workflow.engine.provenance import build_root_body
+from hermes_workflow.board import BoardError, HostBoard, WorkerBoard
+from hermes_workflow.engine.provenance import build_root_body, extract_sentinel
+from hermes_workflow.engine.reconcile import CardRow, pick_winner
 from hermes_workflow.engine.template import (
     TemplateError,
     parse_template,
     validate_template,
 )
+from hermes_workflow.sweep import reverse_topo_order
 from hermes_workflow.materialize import MaterializeError, materialize
 from hermes_workflow.preflight import probe_profiles
 from hermes_workflow.runview import RunView
@@ -247,12 +250,14 @@ def _relink_created_to_joins(wb, t, created, rv):
     return relinked
 
 
-def workflow_reconcile(ctx, *, root_id, board=None):
+def workflow_reconcile(ctx, *, root_id, board=None, kb=None, conn=None):
     """Re-run the engine graph from durable inputs: create-missing + re-link + diagnose.
 
     Mutating — refuses to run inside a dispatcher-spawned worker. Re-materializes
     absent cards (idempotent worktree re-provision), re-links each created child to
-    any pre-existing downstream join, and surfaces review-required stalls.
+    any pre-existing downstream join, and surfaces review-required stalls. Finally,
+    a progress-aware dedup pass collapses genuine concurrent duplicates (two live
+    cards sharing one sentinel identity — e.g. the create-key race).
     """
     guard = _require_orchestrator("workflow_reconcile")
     if guard is not None:
@@ -279,9 +284,179 @@ def workflow_reconcile(ctx, *, root_id, board=None):
             review_required.append({"stage": ident.stage_id, "card": cid,
                                     "remediation": f"hermes kanban unblock {cid}"})
 
+    # Progress-aware dedup: collapse duplicate cards sharing one sentinel identity.
+    deduped = _dedup_duplicates(ctx, board, root_id, wb, kb, conn)
+
     return {
         "root_id": root_id,
         "created": [str(c) for c in created.values()],
         "relinked": [list(p) for p in relinked],
+        "deduped": deduped,
         "diagnosis": {"review_required": review_required},
     }
+
+
+# ---------------------------------------------------------------------------
+# Approve / abandon orchestrator tools + dedup helpers (Phase 3, Task 21).
+# ---------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def _host_board(board, kb, conn):
+    """Yield a HostBoard for the host-only kb.* ops (archive/reclaim — Hermes finding Y).
+
+    A caller-supplied kb/conn (tests) is used as-is and NOT closed (the caller owns it).
+    Otherwise open a host connection via connect_closing, which closes the FD on exit
+    (Hermes #33159 — bare connect() leaks FDs in long-lived orchestrator processes).
+    """
+    if kb is not None and conn is not None:
+        yield HostBoard(kb, conn, board)
+        return
+    from hermes_cli import kanban_db as _kb
+    with _kb.connect_closing(board=board) as opened:
+        yield HostBoard(_kb, opened, board)
+
+
+def workflow_approve(ctx, *, gate_card, board=None):
+    """Complete a human gate card so its downstream stages promote natively.
+
+    Mutating — refuses to run inside a dispatcher-spawned worker. An orchestrator
+    may complete any card; completing the gate promotes downstream via Hermes'
+    native recompute_ready.
+    """
+    guard = _require_orchestrator("workflow_approve")
+    if guard is not None:
+        return guard
+
+    board = board or os.environ.get("HERMES_KANBAN_BOARD", _DEFAULT_BOARD)
+    try:
+        WorkerBoard(ctx, board=board).complete(task_id=gate_card, summary="approved")
+    except BoardError as e:
+        return {"error": str(e)}
+    return {"approved": gate_card}
+
+
+def _orphaned_branches(t, rv, root_id):
+    """Engine-derived worktree branch names for the run's worktree-stage cards.
+
+    Matches worktree.py: ``wf/<root>/<stage>/<fan_index>``.
+    """
+    stages = {s.id: s for s in t.stages}
+    out = []
+    for ident in rv.existing:
+        s = stages.get(ident.stage_id)
+        if s and s.workspace.startswith("worktree:"):
+            out.append(f"wf/{root_id}/{ident.stage_id}/{ident.fan_index}")
+    return sorted(out)
+
+
+def workflow_abandon(ctx, *, root_id, board=None, kb=None, conn=None):
+    """Hazard-free teardown: reclaim running workers, then archive leaves-first.
+
+    Mutating — refuses to run inside a dispatcher-spawned worker. Audits orphaned
+    worktree branches BEFORE archiving (the link-walk is still live), comments the
+    audit on the root (best-effort), reclaims/terminates running workers FIRST
+    (archive does NOT kill them), then archives every run card and the root in
+    reverse-topological (leaves-first) order so recompute_ready never transiently
+    promotes an interior stage.
+    """
+    guard = _require_orchestrator("workflow_abandon")
+    if guard is not None:
+        return guard
+
+    board = board or os.environ.get("HERMES_KANBAN_BOARD", _DEFAULT_BOARD)
+    try:
+        t = parse_template(_root_snapshot(ctx, board, root_id).template_yaml)
+        rv = RunView.from_root(ctx, board=board, root_id=root_id)
+    except (WorkflowError, BoardError, TemplateError) as e:
+        return {"error": str(e)}
+
+    wb = WorkerBoard(ctx, board=board)
+
+    # Audit orphaned worktree branches BEFORE archiving (link-walk still live).
+    orphaned = _orphaned_branches(t, rv, root_id)
+
+    # Comment the audit on the root (best-effort; teardown proceeds regardless).
+    try:
+        wb.comment(root_id, f"hermes-workflow abandon: archiving run; "
+                            f"orphaned worktree branches: {orphaned}")
+    except BoardError:
+        pass
+
+    run_cards = list(rv.by_identity.values())
+    card_set = set(run_cards) | {root_id}
+    children_of = lambda cid: [c for c in (wb.show(cid).get("children") or []) if c in card_set]
+
+    failures = []
+    with _host_board(board, kb, conn) as hb:
+        # Reclaim/terminate running workers FIRST (archive does NOT kill them).
+        for cid in run_cards:
+            if rv.status.get(cid) == "running":
+                try:
+                    hb.reclaim(cid)
+                except Exception as e:
+                    failures.append({"card": cid, "op": "reclaim", "error": str(e)})
+        # Archive leaves-first, including the root. Per-card resilience: a mid-sweep
+        # failure must NOT abort the leaves-first order (a partial sweep can leave an
+        # interior stage transiently promotable). Re-running abandon is idempotent.
+        for cid in reverse_topo_order(card_set, children_of):
+            try:
+                hb.archive(cid)
+            except Exception as e:
+                failures.append({"card": cid, "op": "archive", "error": str(e)})
+
+    return {"abandoned": root_id, "orphaned_branches": orphaned, "failures": failures}
+
+
+def _enumerate_by_identity(ctx, board, root_id):
+    """Link-walk the run and return {Identity: [card_dict, ...]} keeping ALL cards
+    per identity (RunView collapses duplicates; dedup needs to see them all)."""
+    from hermes_workflow.engine.graph import Identity
+    wb = WorkerBoard(ctx, board=board)
+    groups, seen, stack = {}, set(), [root_id]
+    while stack:
+        cid = stack.pop()
+        if cid in seen:
+            continue
+        seen.add(cid)
+        card = wb.show(cid)
+        stack.extend(card.get("children") or [])
+        sentinel = extract_sentinel(card.get("body") or "")
+        if sentinel is None:
+            continue
+        ident = Identity(sentinel.stage_id, sentinel.fan_index, sentinel.attempt)
+        groups.setdefault(ident, []).append(card)
+    return groups
+
+
+def _card_row(card):
+    runs = card.get("runs") or []
+    latest = max((r.get("id", 0) for r in runs), default=None)
+    return CardRow(card_id=card["id"], status=card.get("status"),
+                   latest_run_id=latest, created_at=card.get("created_at") or 0.0)
+
+
+def _dedup_duplicates(ctx, board, root_id, wb, kb, conn):
+    """For each identity with >1 LIVE card: pick the winner, re-wire the winner to
+    each loser's joins (kanban_link; absence-checked), then archive the loser
+    (host kb.* — an archived loser is a satisfied parent so its dangling edge is
+    harmless). Returns the archived loser ids."""
+    groups = _enumerate_by_identity(ctx, board, root_id)
+    dups = {i: cards for i, cards in groups.items()
+            if len([c for c in cards if c.get("status") != "archived"]) > 1}
+    if not dups:
+        return []
+    archived = []
+    with _host_board(board, kb, conn) as hb:
+        for ident, cards in dups.items():
+            live = [c for c in cards if c.get("status") != "archived"]
+            winner = pick_winner([_card_row(c) for c in live])
+            for c in live:
+                if c["id"] == winner.card_id:
+                    continue
+                for join_cid in (c.get("children") or []):
+                    if winner.card_id not in set(wb.show(join_cid).get("parents") or []):
+                        wb.link(winner.card_id, join_cid)   # link(parent=winner, child=join)
+                hb.archive(c["id"])
+                archived.append(c["id"])
+    return archived
