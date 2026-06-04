@@ -1,4 +1,4 @@
-# hermes_workflow/materialize.py
+# src/hermes_workflow/materialize.py
 """Materializer: turn engine CardSpecs into real board cards (the Phase-2 heart).
 
 Given a workflow root and a live ``RunView``, recompile the template from the

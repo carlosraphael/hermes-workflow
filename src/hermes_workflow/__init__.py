@@ -1,4 +1,4 @@
-# hermes_workflow/__init__.py
+# src/hermes_workflow/__init__.py
 """hermes-workflow: declarative workflow primitive over Hermes Kanban."""
 import pathlib
 

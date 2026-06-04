@@ -1,4 +1,4 @@
-# hermes_workflow/veto.py
+# src/hermes_workflow/veto.py
 """The PURE, TOTAL completion-gate logic for the ``pre_tool_call`` veto.
 
 This is the plugin's ONLY blocking channel (Spike 1): a ``pre_tool_call`` hook

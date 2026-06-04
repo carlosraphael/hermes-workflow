@@ -9,8 +9,11 @@ future regression that smuggles in raw SQLite is caught.
 """
 import pathlib
 
-# Repo root = two levels up from tests/unit/ -> .../<repo>/hermes_workflow
-_PKG = pathlib.Path(__file__).resolve().parents[2] / "hermes_workflow"
+import hermes_workflow
+
+# Resolve the package dir from the imported module so this meta-test follows the
+# package regardless of repo layout (src-layout, flat, or eventual in-tree).
+_PKG = pathlib.Path(hermes_workflow.__file__).resolve().parent
 
 # Forbidden substrings. ``connect_closing`` is explicitly allowed (sanctioned
 # host-board opener); a BARE ``.connect(`` is forbidden, so we detect raw connects

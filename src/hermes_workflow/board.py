@@ -1,4 +1,4 @@
-# hermes_workflow/board.py
+# src/hermes_workflow/board.py
 """Board adapter: two surfaces over the Hermes Kanban.
 
 WorkerBoard wraps the worker/hook *model-tool* surface (kanban_create/link/

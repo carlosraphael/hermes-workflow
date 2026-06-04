@@ -1,4 +1,4 @@
-# hermes_workflow/runview.py
+# src/hermes_workflow/runview.py
 """RunView: the live picture of a workflow run, read from the board.
 
 Built by link-walking DOWN from the workflow root (``WorkerBoard.show()``

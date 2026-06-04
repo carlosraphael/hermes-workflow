@@ -1,4 +1,4 @@
-# hermes_workflow/lanes/presets.py
+# src/hermes_workflow/lanes/presets.py
 """Lane contract — the single source of truth for which bundled skill a lane requests.
 
 A *lane* is the execution shape bound to an abstract role:

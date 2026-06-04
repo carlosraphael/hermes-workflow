@@ -1,12 +1,17 @@
 # hermes-workflow
 
-A declarative, versioned, multi-stage **workflow primitive over the Hermes Kanban
-board**. A `*.workflow.yaml` template — params, abstract roles bound to lanes,
-stages with `needs`, a single-level `expand` fan-out plus an `expand_out` shape
-gate, a human `gate`, and workspaces — is instantiated into a Kanban card-graph
-that Hermes' existing dispatcher and worker lanes execute. It turns
-"hand-wire an orchestrator from scratch every run" into a repeatable, durable,
-inspectable run on the board you already use.
+A declarative, versioned, multi-stage workflow primitive over the Hermes Kanban board.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python: >=3.11](https://img.shields.io/badge/python-%3E%3D3.11-blue.svg)](pyproject.toml)
+[![CI](https://github.com/carlosraphael/hermes-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/carlosraphael/hermes-workflow/actions)
+
+A `*.workflow.yaml` template — params, abstract roles bound to lanes, stages with
+`needs`, a single-level `expand` fan-out plus an `expand_out` shape gate, a human
+`gate`, and workspaces — is instantiated into a Kanban card-graph that Hermes'
+existing dispatcher and worker lanes execute. It turns "hand-wire an orchestrator
+from scratch every run" into a repeatable, durable, inspectable run on the board
+you already use.
 
 ## What it is
 
@@ -25,8 +30,9 @@ Completion-gating is **deterministic and injection-free**, enforced by a
 for worktree stages, before a stage may complete. There is no LLM in the gate.
 
 All state lives on the board — body sentinels, links, and statuses — and the run
-root is a write-once compiled-snapshot blackboard. Nothing reaches under the
-`kanban_*` API.
+root is a write-once compiled-snapshot blackboard. Nothing touches raw SQLite —
+every mutation goes through Hermes' board APIs (`kanban_*` from workers, `kb.*`
+from the host).
 
 ## Requirements
 
@@ -36,11 +42,19 @@ root is a write-once compiled-snapshot blackboard. Nothing reaches under the
   **bundled `kanban-codex-lane` skill** present in that role's bound profile.
   This plugin **reuses** that skill — it does **not** re-ship it.
 
-## Install
+## Quick Install
+
+The intended primary path is PyPI:
 
 ```sh
 pip install hermes-workflow
-# or, for development:
+```
+
+From source:
+
+```sh
+git clone https://github.com/carlosraphael/hermes-workflow
+cd hermes-workflow
 pip install -e .
 ```
 
@@ -103,15 +117,22 @@ hermes workflow start --template examples/fix-flaky-tests.workflow.yaml \
 5. `report` (role `reporter`) then runs, summarizing the fixes from the
    handoffs and listing the branches.
 
-Other run commands:
+## Commands
 
-- `hermes workflow status <root_id>` — enumerate the run by link-walk from the root.
-- `hermes workflow reconcile <root_id>` — re-drive a partial fan-out (create
-  missing children, re-link to the join, dedup progress-aware).
-- `hermes workflow approve <gate_card>` — promote a human gate.
-- `hermes workflow abandon <root_id>` — hazard-free teardown (reclaim workers,
-  archive reverse-topologically).
-- `hermes workflow validate --template <path>` — deterministic template check.
+Both surfaces — the CLI (`hermes workflow <cmd>`) and the slash command
+(`/workflow <cmd>`) — dispatch the same tools (`workflow_start` … `workflow_abandon`).
+
+| Command | Form | What it does |
+|---|---|---|
+| `start` | `--template <path> --params <json> --bindings <json> [--board]` | Validate, pre-flight every bound profile, then seed the run (root blackboard + dynamic-free prefix). Fails closed with zero cards if any profile can't load. |
+| `status` | `<root_id> [--board]` | Read-only run summary: per-stage rollup plus `blocked_stages`, `awaiting_approval` (the gate signal), and `review_required`. |
+| `validate` | `--template <path>` | Deterministic, read-only template check. Rejects verify/retry and nested-expand. |
+| `reconcile` | `<root_id> [--board]` | Re-drive a partial fan-out: create missing children, re-link to the join, progress-aware dedup, and surface review-required stalls. |
+| `approve` | `<gate_card> [--board]` | Complete a human gate card so its downstream stages promote natively. |
+| `abandon` | `<root_id> [--board]` | Hazard-free teardown: reclaim running workers, then archive the run reverse-topologically (leaves-first). Worktrees are preserved. |
+
+The four mutating commands (`start`, `reconcile`, `approve`, `abandon`) refuse to
+run inside a dispatcher-spawned worker — they are orchestrator-context only.
 
 ## Bundled skills
 
@@ -129,5 +150,21 @@ Lanes are `{profile, codex}` only — `claude-code` is deferred to 0.2.x.
 0.2.x. Nested fan-out (an `expand` stage that is itself an `expand` source) is
 **forbidden** in 0.1.0.
 
-See [`docs/operations.md`](docs/operations.md) for the upgrade / version-gate
-procedure and operational caveats.
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [`AGENTS.md`](AGENTS.md) | Development guide for AI coding assistants and contributors. |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Development setup, PR process, and code style. |
+| [`docs/operations.md`](docs/operations.md) | Upgrade / version-gate procedure and operational caveats. |
+| [`CONTEXT.md`](CONTEXT.md) | The naming taxonomy (distribution / import / plugin / runtime layers). |
+| [`docs/adr/`](docs/adr/) | Architecture decision records. |
+
+## Contributing
+
+Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
+development setup, PR process, and code style.
+
+## License
+
+MIT — Copyright (c) 2026 Carlos Raphael. See [`LICENSE`](LICENSE).

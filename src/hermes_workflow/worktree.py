@@ -1,4 +1,4 @@
-# hermes_workflow/worktree.py
+# src/hermes_workflow/worktree.py
 """Worktree pre-provisioning (pure — no Hermes imports; shells out to ``git``).
 
 Worktree isolation is engine-pre-provisioned (deterministic), idempotent

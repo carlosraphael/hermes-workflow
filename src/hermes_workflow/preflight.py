@@ -1,4 +1,4 @@
-# hermes_workflow/preflight.py
+# src/hermes_workflow/preflight.py
 """Per-profile pre-flight loadability probe.
 
 Before a run is seeded, we must KNOW that ``hermes-workflow`` is actually

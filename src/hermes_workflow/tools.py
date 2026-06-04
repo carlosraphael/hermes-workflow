@@ -1,4 +1,4 @@
-# hermes_workflow/tools.py
+# src/hermes_workflow/tools.py
 """Orchestrator-facing workflow tools.
 
 ``workflow_start`` validates a template + its bindings, runs a per-profile

@@ -1,4 +1,4 @@
-# hermes_workflow/version.py
+# src/hermes_workflow/version.py
 PLUGIN_VERSION = "0.1.1"
 SCHEMA_VERSION = "0.1"
 SUPPORTED_SCHEMA_VERSIONS = frozenset({"0.1"})

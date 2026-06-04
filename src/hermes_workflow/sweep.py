@@ -1,4 +1,4 @@
-# hermes_workflow/sweep.py
+# src/hermes_workflow/sweep.py
 """Reverse-topological (leaves-first) ordering for hazard-free teardown.
 
 abandon archives children strictly before parents so Hermes' recompute_ready

@@ -1,4 +1,4 @@
-# hermes_workflow/hooks.py
+# src/hermes_workflow/hooks.py
 """post_tool_call fan-out driver.
 
 Runs in the COMPLETING worker's process, right after ``kanban_complete``
