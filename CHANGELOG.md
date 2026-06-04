@@ -10,6 +10,33 @@ Versions refer to the **distribution** `hermes-workflow`; the run-snapshot
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-06-04
+
+Governance and release-tooling release — first published to PyPI. No plugin
+runtime behaviour changed.
+
+### Added
+
+- [`SECURITY.md`](SECURITY.md) — security policy: supported versions, a private
+  GitHub Security Advisories reporting channel, and the plugin's design
+  guarantees (no raw SQLite, injection-free fail-closed completion gate,
+  fail-open fan-out, base64 provenance envelope, non-spawnable sentinels).
+- GitHub issue forms (`bug_report`, `feature_request`, `config`) and a
+  `pull_request_template.md` encoding the contribution checklist and the
+  [`AGENTS.md#key-invariants`](AGENTS.md#key-invariants) gate.
+- This `CHANGELOG.md`, backfilled to v0.1.0.
+- [`.github/workflows/release.yml`](.github/workflows/release.yml) — builds
+  sdist + wheel and publishes to PyPI on a `vMAJOR.MINOR.PATCH` tag via Trusted
+  Publishing (OIDC, no stored token); every action SHA-pinned.
+
+### Fixed
+
+- Test isolation: `tests/integration/test_spike_preflight.py` now resets the
+  process-global `PluginManager` singleton in a finalizer, so its
+  `tmp_path`-bound discovery cache can't leak across tests in the single-process
+  suite (Tier-3 test-convention audit, finding IN-01). No coverage change — 137
+  tests still pass.
+
 ## [0.1.2] - 2026-06-04
 
 ### Changed
@@ -96,7 +123,8 @@ over the Hermes Kanban board, shipped as a standalone (entry-point) plugin.
 - **Packaging:** entry-point plugin (`hermes_agent.plugins`); the wheel ships
   `plugin.yaml` and the bundled skills via `package-data`.
 
-[Unreleased]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/carlosraphael/hermes-workflow/releases/tag/v0.1.0
