@@ -77,3 +77,100 @@ via the `None` return; layer 2 is source-confirmed only):
 **Implication for downstream tasks:** our gate MUST veto by RETURNING
 `{"action":"block","message":...}`. It must NEVER rely on raising — a raised
 exception fails open (no block).
+
+## Spike 2 — per-profile load-status probe (`enabled` != merely configured)
+
+Confirmed against real source (Hermes v0.15.1 @ c47b9d12). Test:
+`tests/integration/test_spike_preflight.py`.
+
+The future `workflow_start` preflight probe needs to know, per profile, whether
+a plugin actually **loaded** (`enabled`) and, if not, **why** (`error`). That
+truth is process-local and home-scoped — read it in-process under the target
+`HERMES_HOME`.
+
+### How to read load status (the CONFIRMED API) **[test + source]**
+- `list_plugins()` is a **method of `PluginManager`**, NOT a module-level
+  function. The plan's `plugins.list_plugins()` is WRONG. Call it via the
+  singleton: `plugins.get_plugin_manager().list_plugins()` (`plugins.py:1574`).
+- It returns **`List[Dict[str, Any]]`** — a list of DICTS, NOT objects with
+  `.name/.enabled/.error`. (`plugins.py:1574-1593`.) **[test]** asserts
+  `isinstance(lst, list)` and, for each entry, `isinstance(entry, dict)` with
+  keys `name`/`enabled`/`error` (`enabled` a `bool`, `error` `Optional[str]`).
+- Exact key set (all 11 keys, observed in a real run under a tmp home):
+  `['commands', 'description', 'enabled', 'error', 'hooks', 'key', 'kind',
+  'name', 'source', 'tools', 'version']`.
+- Read `(enabled, error)` by name via a dict keyed on `"name"`:
+  ```python
+  by_name = {e["name"]: e for e in lst}
+  entry = by_name["hermes-workflow"]      # KeyError if not discovered
+  enabled, error = entry["enabled"], entry["error"]
+  ```
+
+### Observed shape from a real run (HERMES_HOME=tmp, project plugins on) **[test run]**
+- `type(lst).__name__ == 'list'`, **35 entries**, each a `dict`. 28 enabled, 7
+  carrying a non-`None` `error`.
+- Sample ENABLED entry (`error is None`):
+  ```json
+  {"name": "nous", "key": "dashboard_auth/nous", "kind": "backend",
+   "version": "1.0.0", "description": "Dashboard auth provider …",
+   "source": "bundled", "enabled": true, "tools": 0, "hooks": 0,
+   "commands": 0, "error": null}
+  ```
+- Sample DISABLED entry — note this is **our own plugin**, discovered via the
+  `entrypoint` source (the `hermes_agent.plugins` entry point in
+  `pyproject.toml`), `enabled: false`, with a human-readable `error` reason:
+  ```json
+  {"name": "hermes-workflow", "key": "hermes-workflow", "kind": "standalone",
+   "version": "", "description": "", "source": "entrypoint",
+   "enabled": false, "tools": 0, "hooks": 0, "commands": 0,
+   "error": "not enabled in config (run `hermes plugins enable hermes-workflow` to activate)"}
+  ```
+  So `error` is exactly the preflight signal: present + descriptive when a
+  plugin is discovered but not loaded.
+
+### Underlying truth **[source]**
+`list_plugins()` is the public projection of `LoadedPlugin.enabled` /
+`LoadedPlugin.error` (`plugins.py:278-279`); internally
+`get_plugin_manager()._plugins` is a `dict[key, LoadedPlugin]`
+(iterated, `sorted` by key, at `plugins.py:1577`).
+
+### Env vars the probe sets **[test + source]**
+- `HERMES_HOME` → the profile root. Plugin load runs under this home (user
+  plugins scanned at `<HERMES_HOME>/plugins`, `plugins.py:1078`), so load
+  status is per-profile and only visible in-process under that home.
+- `HERMES_ENABLE_PROJECT_PLUGINS=1` → gates scanning of `./.hermes/plugins/`
+  (CWD-relative project plugins) during discovery (`plugins.py:1085-1090`, via
+  `_env_enabled` → `env_var_enabled`). Set explicitly so the scan is
+  deterministic.
+- The test sets both via pytest `monkeypatch.setenv`, so they auto-restore on
+  teardown (no `os.environ` mutation left behind).
+
+### CRITICAL caching caveat — must `force=True` **[source + test]**
+`discover_plugins(force=False)` → `discover_and_load(force=False)` is
+**idempotent**: `if self._discovered and not force: return` (`plugins.py:1034`).
+The PluginManager singleton is **process-global**, so once any earlier test in
+the same process has discovered, a plain `discover_plugins()` is a **no-op** and
+will NOT rescan under your new `HERMES_HOME`. The probe MUST call
+`discover_plugins(force=True)` (or `discover_and_load(force=True)`) to actually
+rescan. `force=True` first clears cached state, including `self._hooks.clear()`
+(`plugins.py:1038`) — harmless for this suite because Spike 1's
+`register_pre_hook` fixture removes its own hooks in teardown rather than
+relying on the dict surviving.
+
+**Singleton residue note:** force-discovering under a tmp home leaves the
+process-global manager pointed at that (now-deleted) tmp home's plugin list. No
+other Phase-0 test depends on the manager's plugin LIST, so this is low-risk;
+the full suite (`pytest -q`) stays green after this test runs. The real
+preflight probe per §9 of the design should run in a **fresh spawned process**
+per profile (cleanest isolation) rather than reusing the in-process singleton.
+
+### Why an in-process / spawned probe is required — `hermes plugins list` is config-only **[source]**
+`hermes plugins list` (`plugins_cmd.py:806 cmd_list`) does NOT reflect runtime
+load status. It calls `_discover_all_plugins()` (a filesystem manifest scan) and
+labels each entry with `_plugin_status()` (`plugins_cmd.py:784-790`), which only
+checks the config `enabled`/`disabled` SETS — it never reads `LoadedPlugin.enabled`
+and never attempts to load a plugin. So a plugin can be "enabled" in config yet
+fail to load (import error, etc.), and the CLI would still show "enabled". To
+learn the actual load result (`enabled` + `error`), you must read
+`PluginManager.list_plugins()` in-process under the target home (or in a spawned
+process). That is precisely what this spike pins down.
