@@ -9,7 +9,7 @@ The 0.x line has **no backward-compatibility guarantees** between versions.
 
 **Operational rule: drain all in-flight runs before upgrading the plugin in any
 profile.** Let active runs reach a terminal state (or `abandon` them) before you
-`pip --upgrade` `hermes-workflow` anywhere.
+`pip install --upgrade hermes-workflow` anywhere.
 
 ### Why draining is required — the worker-side version gate
 
@@ -17,8 +17,8 @@ profile.** Let active runs reach a terminal state (or `abandon` them) before you
 the run root provenance and into every card sentinel. The `post_tool_call`
 fan-out hook and the `pre_tool_call` completion veto both run **worker-side,
 under the worker profile's `HERMES_HOME`**. That means a mid-run
-`pip --upgrade` in a worker profile can change the installed version a worker
-loads — diverging it from the `schema_version` stamped at start.
+`pip install --upgrade` in a worker profile can change the installed version a
+worker loads — diverging it from the `schema_version` stamped at start.
 
 On a `schema_version` mismatch the gate performs a **visible refuse — never a
 raise**:
