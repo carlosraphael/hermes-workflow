@@ -85,3 +85,53 @@ def on_tool_done(*, ctx, tool_name, args, result, task_id, **kwargs):
         materialize(ctx, board=wb.board, root_id=sentinel.workflow_root, runview=rv)
     except Exception:
         log.exception("hermes-workflow fan-out hook failed (swallowed)")
+
+
+def on_tool_pre(*, ctx, tool_name, args, task_id, **kwargs):
+    """pre_tool_call completion gate. Returns a block dict or None.
+
+    MUST fail CLOSED on its own error: a raising pre_tool_call hook fails OPEN
+    (the host swallows it and allows the tool — Spike 1), so the except returns
+    a block dict, never None/raise. Like ``on_tool_done``, Phase-3 ``register``
+    binds ``ctx`` via a closure (Hermes' pre_tool_call invoke does not pass it).
+    """
+    try:
+        if tool_name != _COMPLETE_TOOL:
+            return None
+        from hermes_workflow.veto import evaluate_completion_gate
+        wb = WorkerBoard(ctx, board=_board_of())
+        cid = task_id or (args or {}).get("task_id")
+        card = wb.show(cid)
+        sentinel = extract_sentinel(card.get("body") or "")
+        if not sentinel:
+            return None  # not a workflow card
+        snap = parse_root_body(wb.show(sentinel.workflow_root)["body"])
+        schema_ok = is_version_compatible(snap, SUPPORTED_SCHEMA_VERSIONS)
+        meta = (args or {}).get("metadata") or {}
+        stage_kind, expand_out, ws_dir = _stage_gate_inputs(snap, sentinel, card)
+        return evaluate_completion_gate(stage_kind=stage_kind, expand_out=expand_out,
+                                        metadata=meta, workspace_dir=ws_dir, schema_ok=schema_ok)
+    except Exception:
+        return {"action": "block", "message": "hermes-workflow: completion gate error; failing closed"}
+
+
+def _stage_gate_inputs(snap, sentinel, card):
+    """Resolve the gate inputs from the TEMPLATE stage + the provisioned CARD.
+
+    A ``fix`` card is materialized from a ``worktree:`` TEMPLATE stage into a
+    provisioned ``dir:<path>`` CARD, so the stage KIND is decided from the
+    template stage's ``workspace`` string, while the commit-clean git check
+    reads the CARD's ``workspace_path`` (the provisioned worktree dir).
+    """
+    from hermes_workflow.engine.template import parse_template
+    t = parse_template(snap.template_yaml)
+    stage = t.stage(sentinel.stage_id)
+    expand_out = None
+    kind = "plain"
+    if stage.expand_out:
+        kind = "expand_source"
+        expand_out = {"key": stage.expand_out.key, "max": stage.expand_out.max, "item": stage.expand_out.item}
+    elif stage.workspace.startswith("worktree:"):
+        kind = "worktree"
+    ws_dir = card.get("workspace_path") if kind == "worktree" else None
+    return kind, expand_out, ws_dir
