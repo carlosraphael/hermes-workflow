@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/carlosraphael/hermes-workflow/security/advisories/new
+    about: Do NOT open a public issue for vulnerabilities — report privately via GitHub Security Advisories (see SECURITY.md).
+  - name: 📖 Documentation
+    url: https://github.com/carlosraphael/hermes-workflow/blob/main/README.md
+    about: Read the README, AGENTS.md, and docs/ before opening an issue.
+  - name: 🤝 Contributing Guide
+    url: https://github.com/carlosraphael/hermes-workflow/blob/main/CONTRIBUTING.md
+    about: Contribution priorities, 0.1.0 scope, and the PR process — read this before submitting a PR.
+  - name: 🪶 Hermes Agent
+    url: https://github.com/NousResearch/hermes-agent
+    about: This is a plugin for Hermes Agent. For issues with the host runtime itself, file there.

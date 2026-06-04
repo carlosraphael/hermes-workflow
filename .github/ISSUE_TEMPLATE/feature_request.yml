@@ -1,0 +1,85 @@
+name: "✨ Feature Request"
+description: Suggest a new capability or improvement — within the 0.1.0 scope.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Before submitting, please consider:
+
+        - **Is it in scope?** `0.1.0` is deliberately narrow. Nested fan-out, `verify` / `retry`,
+          granular `reject` / `modify`, and the `claude-code` lane are **deferred to 0.2.x** and
+          rejected today. See the [README "0.1.0 scope"](https://github.com/carlosraphael/hermes-workflow/blob/main/README.md)
+          and [CONTRIBUTING](https://github.com/carlosraphael/hermes-workflow/blob/main/CONTRIBUTING.md#contribution-priorities).
+        - **Should it be a skill or a tool?** A new tool needs a *deterministic* reason to exist;
+          when in doubt, prefer a skill ([CONTRIBUTING](https://github.com/carlosraphael/hermes-workflow/blob/main/CONTRIBUTING.md#should-it-be-a-skill-or-a-tool)).
+        - **Search [existing issues](https://github.com/carlosraphael/hermes-workflow/issues)** — it may already be proposed.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Use Case
+      description: What are you trying to do that you can't today? Describe the workflow, not just the feature.
+      placeholder: |
+        I'm orchestrating a fan-out over N files but I can't ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How should it work? Be specific — template syntax, tool arguments, gate behaviour.
+      placeholder: |
+        Add a `<field>` to the stage schema that ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What else did you consider (an existing tool, a skill, a different template shape)? Why is this better?
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Feature Type
+      options:
+        - New workflow capability (template / engine)
+        - New tool (needs a deterministic reason)
+        - New lane
+        - Validation / completion-gate behaviour
+        - Bundled skill (workflow-author / workflow-orchestrator)
+        - Documentation / examples
+        - Developer experience (tests, CI, packaging)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      description: How big is this change?
+      options:
+        - Small (single module, < 50 lines)
+        - Medium (a few modules, < 300 lines)
+        - Large (new module or a 0.2.x-class feature)
+
+  - type: checkboxes
+    id: skill-or-tool
+    attributes:
+      label: Skill vs. Tool
+      description: If this proposes a new *tool* or *hook*, confirm why it can't be a skill.
+      options:
+        - label: This behaviour must be deterministic and always-available (no LLM in the path) — or it's not a new tool/hook
+        - label: N/A — this is a skill, a docs/test change, or an engine improvement
+
+  - type: checkboxes
+    id: pr-ready
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to implement this myself and submit a PR
