@@ -43,3 +43,62 @@ def register_pre_hook(hermes_root):
                 hooks.remove(cb)
             except ValueError:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# Board fixtures (Spike 3) — thin wrapper over hermes_cli.kanban_db.
+# Phase 1 Task 6 will extract a Board class into tests/integration/board.py;
+# this inline _Board is the minimal precursor. CRITICAL: get_task(...) returns
+# a Task OBJECT (attribute access .status, NOT ["status"]); create_task is
+# keyword-only after conn; complete_task is keyword-only after task_id.
+# ---------------------------------------------------------------------------
+
+
+class _Board:
+    def __init__(self, kb, conn, name):
+        self.kb, self.conn, self.name = kb, conn, name
+
+    def create(self, title, parents=(), assignee="_workflow_root", workspace_kind="scratch",
+               workspace_path=None, body="", skills=None, idempotency_key=None):
+        return self.kb.create_task(self.conn, title=title, body=body, assignee=assignee,
+                                   parents=tuple(parents), workspace_kind=workspace_kind,
+                                   workspace_path=workspace_path, skills=skills,
+                                   idempotency_key=idempotency_key, board=self.name)
+
+    def complete(self, tid, summary="done", metadata=None):
+        return self.kb.complete_task(self.conn, tid, summary=summary, metadata=metadata or {})
+
+    def link(self, parent, child):
+        return self.kb.link_tasks(self.conn, parent_id=parent, child_id=child)
+
+    def archive(self, tid):
+        return self.kb.archive_task(self.conn, tid)
+
+    def status(self, tid):
+        return self.kb.get_task(self.conn, tid).status  # ATTRIBUTE access, not ["status"]
+
+
+@pytest.fixture
+def tmp_board(hermes_root, tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_KANBAN_BOARD", "test")
+    from hermes_cli import kanban_db as kb
+
+    conn = kb.connect(board="test")
+    return _Board(kb, conn, "test")
+
+
+@pytest.fixture
+def mk_card(tmp_board):
+    def _mk(**kw):
+        return tmp_board.create(**kw)
+
+    return _mk
+
+
+@pytest.fixture
+def complete_card(tmp_board):
+    def _c(tid, **kw):
+        return tmp_board.complete(tid, **kw)
+
+    return _c

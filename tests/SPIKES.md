@@ -174,3 +174,156 @@ fail to load (import error, etc.), and the CLI would still show "enabled". To
 learn the actual load result (`enabled` + `error`), you must read
 `PluginManager.list_plugins()` in-process under the target home (or in a spawned
 process). That is precisely what this spike pins down.
+
+## Spike 3 — atomic create + fan-in promotion + late-link demotion
+
+Confirmed against real source (Hermes v0.15.1 @ c47b9d12). Test:
+`tests/integration/test_spike_fanout.py`. Board fixtures (`tmp_board`,
+`mk_card`, `complete_card`) live in `tests/conftest.py` as an inline `_Board`
+wrapper — Phase 1 Task 6 will extract these into `tests/integration/board.py`.
+
+**Coverage legend** (same convention as Spikes 1–2):
+- **[test]** = directly asserted by `test_spike_fanout.py`.
+- **[source]** = confirmed by reading the pinned Hermes source, NOT exercised
+  by a test (re-verify if Hermes moves).
+
+### The three confirmed board behaviors **[test]**
+All three reproduced exactly as pre-confirmed by the controller's live run; no
+spike-stop:
+1. `create_task(parents=[a, b])` with a, b incomplete → join lands `todo`
+   ATOMICALLY at create (status computed from CURRENT parent statuses).
+2. Complete only `a` → join still `todo` (gated on b). Complete `b` too → join
+   `ready` (promoted exactly when the LAST parent completes).
+3. `a` done; `create_task(parents=[a])` → `ready`; create incomplete `c`
+   (no parents → lands `ready`, not `done`); `link_tasks(parent_id=c,
+   child_id=join)` → join DEMOTED back to `todo`. This is what makes reconcile's
+   late re-link safe.
+- Sanity: a no-parent `create_task` lands `ready` (`create_task` docstring +
+  :2156); used by the test's plain `mk_card(title=...)` children.
+
+### CONFIRMED kb signatures (carry these to Task 6 / board.py)
+
+`create_task` — **keyword-only after `conn`** (note the `*` at
+`kanban_db.py:1997`). Returns the new task id (`str`):
+```python
+create_task(
+    conn: sqlite3.Connection, *,
+    title: str, body=None, assignee=None, created_by=None,
+    workspace_kind="scratch", workspace_path=None, branch_name=None,
+    tenant=None, priority=0, parents: Iterable[str]=(), triage=False,
+    idempotency_key=None, max_runtime_seconds=None, skills=None,
+    max_retries=None, goal_mode=False, goal_max_turns=None,
+    initial_status="running", session_id=None, board=None,
+) -> str
+```
+- Atomic status-from-parents block (`:2147-2168`): `initial_status="blocked"` →
+  `blocked`; `triage=True` → `triage`; else default `ready`, but if `parents`
+  and ANY parent row `status != "done"` → `todo`. So the rule is
+  **"no parents → ready; some parents not done → todo; all parents done →
+  ready"**, computed atomically inside the create write-txn from CURRENT parent
+  statuses. **[source]**
+- `initial_status` DEFAULT is `"running"`, but it is OVERRIDDEN by the
+  status-from-parents block above for the normal (non-blocked, non-triage)
+  path — a no-parent create still lands `ready`, NOT `running`. **[source]**
+- Parent existence is validated by `_find_missing_parents` (`:2235-2245`);
+  unknown parents raise `ValueError("unknown parent task(s): …")`. **[source]**
+
+`complete_task` — **keyword-only after `task_id`** (`*` at `:3508`). Returns
+`bool`:
+```python
+complete_task(
+    conn, task_id, *,
+    result=None, summary=None, metadata=None,
+    created_cards=None, expected_run_id=None,
+) -> bool
+```
+- Param names confirmed `summary` / `metadata` (NOT a positional `summary`).
+  The `_Board.complete(tid, summary=..., metadata=...)` kwargs match exactly —
+  no correction needed. **[source]**
+- Writes `done` gated on the task's OWN id AND `status IN ('running','ready',
+  'blocked')` (`:3576-3605`); returns `False` if `rowcount != 1` (e.g. already
+  done / unknown). A no-parent card sits in `ready`, which is accepted. **[source]**
+- After committing the completion it calls `recompute_ready(conn)` (`:3681`,
+  separate txn so children see `done`) — THIS is what promotes the join
+  `todo`→`ready` when the last parent completes. **[source, observed via test]**
+
+`recompute_ready` — promotes only, never demotes:
+```python
+recompute_ready(conn, failure_limit: int = None) -> int   # returns # promoted
+```
+- Scans tasks in `('todo','blocked')` and promotes to `ready` ONLY when ALL
+  parents ∈ `{done, archived}` (`:2858-2908`). It updates with a guarded
+  `WHERE … AND status = 'todo'` / `'blocked'`, so it NEVER demotes a non-todo
+  card. Demotion is a DIFFERENT function (`link_tasks`, below). **[source]**
+
+`link_tasks` — adds a parent→child edge AND performs the ready→todo demotion:
+```python
+link_tasks(conn, parent_id: str, child_id: str) -> None
+```
+- After inserting the edge, if the new parent's `status != "done"` it runs
+  `UPDATE tasks SET status='todo' WHERE id=child_id AND status='ready'`
+  (`:2371-2379`) — so linking an INCOMPLETE parent demotes a `ready` child to
+  `todo`. (Note positional `parent_id, child_id`; the `_Board.link` helper
+  passes them as kwargs `parent_id=`/`child_id=` which is fine.) Also rejects
+  self-links and cycles with `ValueError`. **[source, demotion observed via test]**
+
+`get_task` — returns a `Task` OBJECT or `None`:
+```python
+get_task(conn, task_id: str) -> Optional[Task]
+```
+- **CRITICAL correction vs the plan's Task 6 snippet:** `Task` is a dataclass
+  (`kanban_db.py:676`) with a `.status: str` ATTRIBUTE. Use ATTRIBUTE access
+  `get_task(conn, tid).status` — the plan's `["status"]` (dict subscript) is
+  WRONG and would raise `TypeError`. `_Board.status` uses attribute access.
+  Returns `None` if the row is absent. **[source + test]**
+
+`connect` — `connect(db_path=None, *, board=None) -> sqlite3.Connection`
+(`:1358`). `connect(board="test")` resolves the board DB under `HERMES_HOME`
+and auto-runs `init_db` on first open, so the `tmp_board` fixture needs no
+separate init step. **[source + test]**
+
+`archive_task` — `archive_task(conn, task_id: str) -> bool` (`:4486`). Wired on
+`_Board.archive` for completeness; NOT exercised by this spike. **[source]**
+
+### Fixture / isolation notes
+- `tmp_board` sets `HERMES_HOME=<tmp_path>` and `HERMES_KANBAN_BOARD="test"`
+  via `monkeypatch.setenv` (auto-restored; no `os.environ` mutation). Each test
+  gets a fresh `tmp_path` → an isolated board file, so tests don't interfere.
+- Sentinel assignees with a leading underscore (`_workflow_root` for children,
+  `_workflow_gate` for joins) keep cards non-spawnable — fine for this
+  no-dispatch kb-layer board test. They pass through `_canonical_assignee` →
+  `normalize_profile_name` (`:1986-1992`) without rejection.
+
+### Future fan-out hook surface (recorded for the post_tool_call hook) **[source]**
+Not exercised by this spike's tests — the tests use the kb layer directly.
+
+- `post_tool_call` hook invocation (`model_tools.py:993-1006`, top-level file):
+  ```python
+  invoke_hook("post_tool_call",
+      tool_name=function_name, args=function_args, result=result,
+      task_id=task_id or "", session_id=session_id or "",
+      tool_call_id=tool_call_id or "", duration_ms=duration_ms)
+  ```
+  The return value is IGNORED and exceptions are SWALLOWED (logged at debug,
+  `:1005-1006`). **Implications for the fan-out hook callback:**
+  - It MUST accept `**kwargs` (host passes the 7 kwargs above; arg names:
+    `tool_name`, `args`, `result`, `task_id`, `session_id`, `tool_call_id`,
+    `duration_ms`).
+  - The handoff is read from `args` (the tool's INPUT args, e.g.
+    `args["metadata"]`), NOT from `result`.
+  - It is observational/fail-open: a raise won't surface, a return won't change
+    the result. Any board writes must be self-contained.
+
+- `kanban_create` model-tool return shape (`tools/kanban_tools.py:_handle_create`
+  `:723`, success path `:820-824`): returns `_ok(task_id=new_tid,
+  status=new_task.status)`. `_ok(**fields)` (`:263-264`) is
+  `json.dumps({"ok": True, **fields})`, so the return is a JSON STRING:
+  `{"ok": true, "task_id": "t_…", "status": "ready"|"todo"|…}`. The design's
+  claimed `{task_id, status}` is correct but wrapped in the `{"ok": true}`
+  envelope. Errors return `tool_error(...)` (an `{"error": …}` JSON string).
+
+- `PluginContext.dispatch_tool` (`hermes_cli/plugins.py:467-494`): signature
+  `dispatch_tool(self, tool_name: str, args: dict, **kwargs) -> str`. Auto-wires
+  `parent_agent` from `self._manager._cli_ref` when available, then returns
+  `registry.dispatch(tool_name, args, **kwargs)` — a JSON STRING (same format as
+  model tool calls). Matches the design's "JSON string" claim.
