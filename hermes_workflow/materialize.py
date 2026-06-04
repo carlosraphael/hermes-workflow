@@ -86,6 +86,9 @@ def materialize(ctx, *, board, root_id, runview, base_ref=None) -> dict:
             pending.append(spec)  # retry once its parents are created this pass
             continue
 
+        if not parent_ids:
+            parent_ids = [root_id]  # entry stage: descend from the run root so link-walk reaches it
+
         ws_kind, ws_path = _workspace(spec.workspace, root_id, spec.identity, base_ref)
         body = embed_sentinel(LIFECYCLE_PREAMBLE + spec.body, _sentinel(root_id, spec, t))
 

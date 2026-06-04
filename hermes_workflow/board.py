@@ -65,6 +65,12 @@ class WorkerBoard:
             raise BoardError(f"kanban_comment failed: {r}")
         return r
 
+    def complete(self, *, task_id, summary=None):
+        r = self._call("kanban_complete", {"task_id": task_id, "summary": summary})
+        if not r.get("ok"):
+            raise BoardError(f"kanban_complete failed: {r}")
+        return r
+
     def show(self, task_id):
         """Return a FLAT card dict.
 
