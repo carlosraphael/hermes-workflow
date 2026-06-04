@@ -12,8 +12,12 @@ can't load the plugin (or a codex lane is missing its binary/skill), we return
 a remediation map and create NOTHING. Cards are only ever created after the
 probe is fully green.
 """
+import argparse
 import contextlib
+import json
 import os
+import pathlib
+import shlex
 import subprocess
 
 from hermes_workflow.board import BoardError, HostBoard, WorkerBoard
@@ -460,3 +464,176 @@ def _dedup_duplicates(ctx, board, root_id, wb, kb, conn):
                 hb.archive(c["id"])
                 archived.append(c["id"])
     return archived
+
+
+# ---------------------------------------------------------------------------
+# Registration surfaces (Phase 3, Task 22): tool schemas, the registry handler
+# adapter, and the shared CLI/slash argparse builder + dispatcher.
+# ---------------------------------------------------------------------------
+
+WORKFLOW_START_SCHEMA = {
+    "name": "workflow_start",
+    "description": "Validate a workflow template + bindings, pre-flight every bound "
+                   "profile, then seed the run (root blackboard + dynamic-free prefix).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "template_text": {"type": "string", "description": "The workflow template YAML."},
+            "params": {"type": "object", "description": "Template parameter values."},
+            "bindings": {"type": "object", "description": "Role -> profile bindings."},
+            "board": {"type": "string", "description": "Kanban board name (optional)."},
+        },
+        "required": ["template_text", "params", "bindings"],
+    },
+}
+
+WORKFLOW_STATUS_SCHEMA = {
+    "name": "workflow_status",
+    "description": "Read-only run summary: per-stage rollup plus blocked / "
+                   "awaiting-approval / review-required cards.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "root_id": {"type": "string", "description": "The workflow root card id."},
+            "board": {"type": "string", "description": "Kanban board name (optional)."},
+        },
+        "required": ["root_id"],
+    },
+}
+
+WORKFLOW_VALIDATE_SCHEMA = {
+    "name": "workflow_validate",
+    "description": "Deterministic template gatekeeper (read-only): parse + validate "
+                   "a template and report the first failure.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "template_text": {"type": "string", "description": "The workflow template YAML."},
+        },
+        "required": ["template_text"],
+    },
+}
+
+WORKFLOW_RECONCILE_SCHEMA = {
+    "name": "workflow_reconcile",
+    "description": "Re-run the engine graph from durable inputs: create-missing, "
+                   "re-link to joins, dedup duplicates, and diagnose stalls.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "root_id": {"type": "string", "description": "The workflow root card id."},
+            "board": {"type": "string", "description": "Kanban board name (optional)."},
+        },
+        "required": ["root_id"],
+    },
+}
+
+WORKFLOW_APPROVE_SCHEMA = {
+    "name": "workflow_approve",
+    "description": "Complete a human gate card so its downstream stages promote natively.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "gate_card": {"type": "string", "description": "The human-gate card id to approve."},
+            "board": {"type": "string", "description": "Kanban board name (optional)."},
+        },
+        "required": ["gate_card"],
+    },
+}
+
+WORKFLOW_ABANDON_SCHEMA = {
+    "name": "workflow_abandon",
+    "description": "Hazard-free teardown: reclaim running workers, then archive the "
+                   "whole run leaves-first.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "root_id": {"type": "string", "description": "The workflow root card id."},
+            "board": {"type": "string", "description": "Kanban board name (optional)."},
+        },
+        "required": ["root_id"],
+    },
+}
+
+TOOL_SPECS = [
+    ("workflow_start", workflow_start, WORKFLOW_START_SCHEMA),
+    ("workflow_status", workflow_status, WORKFLOW_STATUS_SCHEMA),
+    ("workflow_validate", workflow_validate, WORKFLOW_VALIDATE_SCHEMA),
+    ("workflow_reconcile", workflow_reconcile, WORKFLOW_RECONCILE_SCHEMA),
+    ("workflow_approve", workflow_approve, WORKFLOW_APPROVE_SCHEMA),
+    ("workflow_abandon", workflow_abandon, WORKFLOW_ABANDON_SCHEMA),
+]
+
+
+def make_tool_handler(ctx, fn):
+    """Adapt a keyword workflow function to the registry's handler contract.
+
+    The registry calls handler(args: dict, **kwargs) and expects a JSON string
+    that never raises. We unpack args as keywords into fn(ctx, **args), serialize
+    its dict result, and convert any exception into a {"error": ...} envelope.
+    """
+    def handler(args, **kwargs):
+        try:
+            return json.dumps(fn(ctx, **(args or {})))
+        except Exception as e:
+            return json.dumps({"error": f"{fn.__name__} failed: {e}"})
+    return handler
+
+
+def cli_setup(parser):
+    """Add `hermes workflow <subcommand>` sub-subparsers (also reused by the slash parser)."""
+    sub = parser.add_subparsers(dest="wf_cmd", required=True)
+    p = sub.add_parser("start");     p.add_argument("--template", required=True); p.add_argument("--params", default="{}"); p.add_argument("--bindings", required=True); p.add_argument("--board")
+    p = sub.add_parser("status");    p.add_argument("root_id"); p.add_argument("--board")
+    p = sub.add_parser("validate");  p.add_argument("--template", required=True)
+    p = sub.add_parser("reconcile"); p.add_argument("root_id"); p.add_argument("--board")
+    p = sub.add_parser("approve");   p.add_argument("gate_card"); p.add_argument("--board")
+    p = sub.add_parser("abandon");   p.add_argument("root_id"); p.add_argument("--board")
+
+
+def _read_template(path):
+    return pathlib.Path(path).read_text()
+
+
+def _dispatch_ns(ctx, ns):
+    """Run a parsed `workflow ...` namespace; returns the tool's dict result."""
+    cmd = getattr(ns, "wf_cmd", None)
+    if cmd == "start":
+        return workflow_start(ctx, template_text=_read_template(ns.template),
+                              params=json.loads(ns.params), bindings=json.loads(ns.bindings), board=ns.board)
+    if cmd == "status":
+        return workflow_status(ctx, root_id=ns.root_id, board=ns.board)
+    if cmd == "validate":
+        return workflow_validate(ctx, template_text=_read_template(ns.template))
+    if cmd == "reconcile":
+        return workflow_reconcile(ctx, root_id=ns.root_id, board=ns.board)
+    if cmd == "approve":
+        return workflow_approve(ctx, gate_card=ns.gate_card, board=ns.board)
+    if cmd == "abandon":
+        return workflow_abandon(ctx, root_id=ns.root_id, board=ns.board)
+    return {"error": f"unknown workflow subcommand: {cmd!r}"}
+
+
+def cli_dispatch(ctx, args):
+    """`hermes workflow ...` terminal handler (args already parsed by Hermes)."""
+    result = _dispatch_ns(ctx, args)
+    print(json.dumps(result, indent=2))
+    return result
+
+
+def slash_dispatch(ctx, raw_args):
+    """`/workflow ...` in-session slash handler. Returns a JSON string (or usage)."""
+    parser = argparse.ArgumentParser(prog="workflow", add_help=False)
+    cli_setup(parser)
+    try:
+        ns = parser.parse_args(shlex.split(raw_args or ""))
+    except SystemExit:
+        return "usage: /workflow <start|status|validate|reconcile|approve|abandon> [args]"
+    # The interactive slash surface honors the plugin's flat {"error": ...} contract:
+    # a missing --template path or malformed --params/--bindings JSON becomes a clean
+    # error rather than a raw exception bubbling into the session.
+    try:
+        result = _dispatch_ns(ctx, ns)
+    except (OSError, json.JSONDecodeError) as e:
+        result = {"error": f"workflow {ns.wf_cmd} failed: {e}"}
+    return json.dumps(result, indent=2)
