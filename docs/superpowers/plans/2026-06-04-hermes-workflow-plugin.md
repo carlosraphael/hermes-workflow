@@ -1316,7 +1316,7 @@ git commit -m "feat(engine): progress-aware reconcile winner (done wins; run_id/
 
 The adapter wraps the two surfaces: **worker context** (hook) uses `ctx.dispatch_tool("kanban_create"/"kanban_link"/"kanban_comment"/"kanban_show")`; **orchestrator context** (tools/CLI) additionally uses host `kb.*` for `archive`/`unlink`/`reclaim`/`list` (no model tool — finding Y). Use the exact signatures recorded in `SPIKES.md` (Tasks 3/5).
 
-- [ ] **Step 1: Write the failing adapter test (worker create+link via dispatch_tool)**
+- [x] **Step 1: Write the failing adapter test (worker create+link via dispatch_tool)**
 
 ```python
 # tests/integration/test_board_adapter.py
@@ -1337,9 +1337,9 @@ def test_create_and_show_via_dispatch(fake_ctx, tmp_board, as_worker):
 
 > Add a `fake_ctx` fixture to `conftest.py` whose `dispatch_tool(name, args)` calls `hermes_cli`'s real tool dispatch (`registry.dispatch` / `model_tools`) so the adapter exercises the real path with no LLM. Wire it from the signatures in `SPIKES.md`.
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement the adapter**
+- [x] **Step 3: Implement the adapter**
 
 ```python
 # hermes_workflow/board.py
@@ -1396,7 +1396,7 @@ class HostBoard:
 
 > Replace each `kb.*`/tool arg name with the exact one from `SPIKES.md`. If a recorded signature differs, fix the call here (this is the single place coupled signatures live).
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/integration/test_board_adapter.py -v` → PASS.
 
@@ -1415,7 +1415,7 @@ git commit -m "feat: board adapter (worker dispatch_tool + host kb.* surfaces)"
 
 `RunView` builds the live picture from the board (finding D2 — enumerate by link-walk from the root; `kanban_show` returns body+children): the set of existing `Identity`s, each card's status + latest-run metadata (for `completed`), and the `Identity → card_id` map (to resolve parents).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/integration/test_runview.py
@@ -1433,9 +1433,9 @@ def test_runview_enumerates_existing_identities(fake_ctx, tmp_board, seed_run):
 
 > Add a `seed_run` fixture that creates a root via `build_root_body(...)` and one `scan` child whose body carries `embed_sentinel(...)`. Reuse `WorkerBoard`/`tmp_board`.
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # hermes_workflow/runview.py
@@ -1494,7 +1494,7 @@ def _latest_done_metadata(card, kb, conn):
     return (done[-1].get("metadata") if done else {}) or {}
 ```
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/integration/test_runview.py -v` → PASS.
 
@@ -1513,7 +1513,7 @@ git commit -m "feat: RunView — link-walk enumeration + identity resolution + c
 
 Resolves each `CardSpec`'s `parent_identities` → card_ids via `RunView`, embeds the sentinel + the lifecycle preamble (B6) in the body, sets **explicit** workspace (D3) and `board`, uses a deterministic `idempotency_key = hash(root+stage+fan_index+attempt)`, pre-provisions a worktree for `worktree:` specs (B4), and creates via `kanban_create(parents=[...])` (R5). Then links any parent that wasn't expressible at create time.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/integration/test_materialize.py
@@ -1536,9 +1536,9 @@ def test_materialize_creates_join_wired_to_all_instances(fake_ctx, tmp_board, se
     assert tmp_board.status(approve_cid) == "todo"     # gated until both fix done
 ```
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # hermes_workflow/materialize.py
@@ -1604,7 +1604,7 @@ def materialize(ctx, *, board, root_id, runview, base_ref=None):
     return created
 ```
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/integration/test_materialize.py -v` → PASS.
 
@@ -1621,7 +1621,7 @@ git commit -m "feat: materializer — specs->cards (sentinel+preamble, explicit 
 - Create: `hermes_workflow/worktree.py`
 - Test: `tests/unit/test_worktree.py`
 
-- [ ] **Step 1: Write the failing test (idempotent, base-pinned, deterministic path)**
+- [x] **Step 1: Write the failing test (idempotent, base-pinned, deterministic path)**
 
 ```python
 # tests/unit/test_worktree.py
@@ -1644,9 +1644,9 @@ def test_provision_is_idempotent(tmp_path):
     assert pathlib.Path(p1, ".git").exists()
 ```
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # hermes_workflow/worktree.py
@@ -1684,7 +1684,7 @@ def provision_worktree(root_id, ident, repo, base_ref=None) -> str:
     return str(path)
 ```
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/unit/test_worktree.py -v` → PASS.
 
@@ -1701,7 +1701,7 @@ git commit -m "feat: idempotent base-pinned worktree pre-provisioning"
 - Create: `hermes_workflow/hooks.py`
 - Test: `tests/integration/test_hook_fanout.py`
 
-- [ ] **Step 1: Write the failing test (fan-out fires on a sentinel stage's completion)**
+- [x] **Step 1: Write the failing test (fan-out fires on a sentinel stage's completion)**
 
 ```python
 # tests/integration/test_hook_fanout.py
@@ -1731,9 +1731,9 @@ def test_hook_never_raises_on_garbage(fake_ctx):
     on_tool_done(ctx=fake_ctx, tool_name="kanban_complete", args=None, result="not-json", task_id="t_x")
 ```
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # hermes_workflow/hooks.py
@@ -1783,7 +1783,7 @@ def _board_of(ctx):
     return os.environ.get("HERMES_KANBAN_BOARD", "default")
 ```
 
-- [ ] **Step 4: Run + commit**
+- [x] **Step 4: Run + commit**
 
 Run: `pytest tests/integration/test_hook_fanout.py -v` → PASS.
 
@@ -1803,7 +1803,7 @@ git commit -m "feat(hook): post_tool_call fan-out driver (version-gated, side-ef
 
 Enforces, before `kanban_complete`: **version compatible**, **`expand_out` shape + `max`** (total/non-raising), **commit-clean** for worktree stages (fixed `git -C <path> status --porcelain`, no untrusted interpolation). Returns `{"action":"block","message":…}`; on its OWN failure it returns a block dict (fails **closed** — never `None`/raise).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/integration/test_veto.py
@@ -1849,9 +1849,9 @@ def test_internal_error_fails_closed():
     assert d["action"] == "block"
 ```
 
-- [ ] **Step 2: Run → FAIL.**
+- [x] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement the gate logic (pure, total)**
+- [x] **Step 3: Implement the gate logic (pure, total)**
 
 ```python
 # hermes_workflow/veto.py
@@ -1891,7 +1891,7 @@ def evaluate_completion_gate(*, stage_kind, expand_out, metadata, workspace_dir,
         return _block(f"completion gate internal error (failing closed): {e!r}")
 ```
 
-- [ ] **Step 4: Wire it into a `pre_tool_call` hook in `hooks.py`**
+- [x] **Step 4: Wire it into a `pre_tool_call` hook in `hooks.py`**
 
 ```python
 # hermes_workflow/hooks.py  (append)
@@ -1933,7 +1933,7 @@ def _stage_gate_inputs(snap, sentinel, card):
     return kind, expand_out, ws_dir
 ```
 
-- [ ] **Step 5: Run + commit**
+- [x] **Step 5: Run + commit**
 
 Run: `pytest tests/integration/test_veto.py -v` → PASS.
 
