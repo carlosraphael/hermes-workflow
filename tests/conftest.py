@@ -92,6 +92,48 @@ def complete_card(tmp_board):
     return _c
 
 
+# ---------------------------------------------------------------------------
+# seed_run — a completed-root blackboard + a sentinel-stamped ``scan`` stage
+# card. Reusable across Tasks 14, 15 & 17. Returns a Seeded(root_id, scan_id).
+# ---------------------------------------------------------------------------
+
+DEMO_TPL = """
+name: demo
+version: 0.1.0
+params: { repo: { type: string, required: true } }
+roles: { scout: { lane: profile }, fixer: { lane: codex }, reporter: { lane: profile } }
+stages:
+  - { id: scan, role: scout, title: "scan ${params.repo}", workspace: "dir:${params.repo}",
+      expand_out: { key: flaky, max: 50, item: { test_id: string, file: string } } }
+  - { id: fix, role: fixer, needs: [scan], expand: { over: scan.flaky, as: t },
+      title: "fix ${t.test_id}", body: "fix ${t.file}", workspace: "worktree:${params.repo}" }
+  - { id: approve, needs: [fix], gate: human }
+  - { id: report, role: reporter, needs: [approve, fix], title: "report" }
+"""
+DEMO_PARAMS = {"repo": "/r"}
+DEMO_BINDINGS = {"scout": "designer", "fixer": "coder", "reporter": "writer"}
+
+
+@pytest.fixture
+def seed_run(tmp_board):
+    from collections import namedtuple
+    from hermes_workflow.engine.provenance import build_root_body, embed_sentinel, Sentinel
+    from hermes_workflow.version import PLUGIN_VERSION, SCHEMA_VERSION, SENTINEL_ROOT_ASSIGNEE
+    Seeded = namedtuple("Seeded", "root_id scan_id")
+
+    def _seed(template_yaml=DEMO_TPL, params=DEMO_PARAMS, bindings=DEMO_BINDINGS):
+        root_body = build_root_body(template_yaml, params, bindings, PLUGIN_VERSION, SCHEMA_VERSION)
+        root_id = tmp_board.create(title="wf root", assignee=SENTINEL_ROOT_ASSIGNEE, body=root_body)
+        tmp_board.complete(root_id)  # root is a completed blackboard
+        scan_sent = Sentinel(root_id, "scan", 0, 0, "demo", "0.1.0", PLUGIN_VERSION, SCHEMA_VERSION)
+        scan_body = embed_sentinel("scan body", scan_sent)
+        scan_id = tmp_board.create(title="scan /r", parents=[root_id], assignee="designer",
+                                   workspace_kind="dir", workspace_path=params["repo"], body=scan_body)
+        return Seeded(root_id, scan_id)
+
+    return _seed
+
+
 @pytest.fixture
 def fake_ctx(hermes_root, tmp_board):
     """A tiny stand-in for a Hermes PluginContext exposing only dispatch_tool.
