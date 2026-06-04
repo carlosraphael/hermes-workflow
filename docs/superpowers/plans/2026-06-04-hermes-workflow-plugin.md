@@ -33,7 +33,7 @@ The spikes (§14) confirm the load-bearing Hermes behaviors the coupled code dep
 - Create: `tests/integration/test_plugin_loads.py`
 - Create: `tests/conftest.py`
 
-- [ ] **Step 1: Write `version.py`**
+- [x] **Step 1: Write `version.py`**
 
 ```python
 # hermes_workflow/version.py
@@ -44,7 +44,7 @@ SENTINEL_GATE_ASSIGNEE = "_workflow_gate"
 SENTINEL_ROOT_ASSIGNEE = "_workflow_root"
 ```
 
-- [ ] **Step 2: Write `plugin.yaml`**
+- [x] **Step 2: Write `plugin.yaml`**
 
 ```yaml
 name: hermes-workflow
@@ -62,7 +62,7 @@ provides_hooks:
   - pre_tool_call
 ```
 
-- [ ] **Step 3: Write a minimal `register(ctx)`**
+- [x] **Step 3: Write a minimal `register(ctx)`**
 
 ```python
 # hermes_workflow/__init__.py
@@ -77,7 +77,7 @@ def register(ctx):
     ctx.log.info("hermes-workflow %s loaded", PLUGIN_VERSION) if hasattr(ctx, "log") else None
 ```
 
-- [ ] **Step 4: Write `pyproject.toml` with the entry point**
+- [x] **Step 4: Write `pyproject.toml` with the entry point**
 
 ```toml
 [project]
@@ -97,7 +97,7 @@ testpaths = ["tests"]
 markers = ["integration: requires a real Hermes board + plugin load (no LLM)"]
 ```
 
-- [ ] **Step 5: Write `tests/conftest.py` (locate the Hermes checkout, skip integration cleanly if absent)**
+- [x] **Step 5: Write `tests/conftest.py` (locate the Hermes checkout, skip integration cleanly if absent)**
 
 ```python
 # tests/conftest.py
@@ -117,7 +117,7 @@ def hermes_root():
     return HERMES_ROOT
 ```
 
-- [ ] **Step 6: Write the load smoke test**
+- [x] **Step 6: Write the load smoke test**
 
 ```python
 # tests/integration/test_plugin_loads.py
@@ -136,19 +136,19 @@ def test_register_is_importable_and_crashfree():
     mod.register(FakeCtx())  # must not raise
 ```
 
-- [ ] **Step 7: Run + verify**
+- [x] **Step 7: Run + verify**
 
 Run: `pip install -e ".[dev]" && pytest tests/integration/test_plugin_loads.py -v`
 Expected: PASS.
 
-- [ ] **Step 8: Seed `tests/SPIKES.md`**
+- [x] **Step 8: Seed `tests/SPIKES.md`**
 
 ```markdown
 # Spike findings (confirmed Hermes v0.15.1 @ c47b9d12 signatures/behaviors)
 Each spike records the exact signature/behavior the coupled tasks depend on.
 ```
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add hermes_workflow pyproject.toml tests/
@@ -165,11 +165,11 @@ git commit -m "chore: scaffold hermes-workflow plugin + load smoke test"
 - Create: `tests/integration/test_spike_veto.py`
 - Modify: `tests/SPIKES.md`
 
-- [ ] **Step 1: Read the source first**
+- [x] **Step 1: Read the source first**
 
 Read in the checkout: `model_tools.py:928-943` (pre_tool_call block path; note `block_message=None` on swallowed exception) and `hermes_cli/plugins.py:1666-1707` (`get_pre_tool_call_block_message`). Record the exact return contract in `SPIKES.md`.
 
-- [ ] **Step 2: Write the spike test (block path)**
+- [x] **Step 2: Write the spike test (block path)**
 
 ```python
 # tests/integration/test_spike_veto.py
@@ -187,7 +187,7 @@ def test_pre_tool_call_block_prevents_completion(hermes_root, tmp_board):
     assert msg and "veto" in msg  # the block message surfaces; complete is not dispatched
 ```
 
-- [ ] **Step 3: Write the fail-open assertion**
+- [x] **Step 3: Write the fail-open assertion**
 
 ```python
 def test_pre_tool_call_exception_fails_open(hermes_root):
@@ -202,12 +202,12 @@ def test_pre_tool_call_exception_fails_open(hermes_root):
     assert msg is None
 ```
 
-- [ ] **Step 4: Run + record**
+- [x] **Step 4: Run + record**
 
 Run: `pytest tests/integration/test_spike_veto.py -v`
 Expected: PASS. If the block contract differs, record the actual shape in `SPIKES.md` and STOP for review.
 
-- [ ] **Step 5: Record findings + commit**
+- [x] **Step 5: Record findings + commit**
 
 Append to `SPIKES.md`: the exact `register_hook` name, the `get_pre_tool_call_block_message` signature, and the confirmed "exception ⇒ no block (fail-open)" rule.
 
@@ -226,11 +226,11 @@ git commit -m "test(spike): pre_tool_call veto blocks complete; raises fail open
 - Create: `tests/integration/test_spike_preflight.py`
 - Modify: `tests/SPIKES.md`
 
-- [ ] **Step 1: Read the source**
+- [x] **Step 1: Read the source**
 
 Read `hermes_cli/plugins.py:278-279` (`LoadedPlugin.enabled/.error`), `:1574-1593` (`list_plugins()`), `:1085` (`HERMES_ENABLE_PROJECT_PLUGINS`); `hermes_cli/plugins_cmd.py:806` (config-only `list`). Record the exact way to read load status in-process.
 
-- [ ] **Step 2: Write the probe-shape test**
+- [x] **Step 2: Write the probe-shape test**
 
 ```python
 # tests/integration/test_spike_preflight.py
@@ -248,12 +248,12 @@ def test_list_plugins_reports_load_status(hermes_root, tmp_path):
     # Record in SPIKES.md the exact shape (list[LoadedPlugin] vs dict) + attribute names.
 ```
 
-- [ ] **Step 3: Run + record the exact return shape**
+- [x] **Step 3: Run + record the exact return shape**
 
 Run: `pytest tests/integration/test_spike_preflight.py -v`
 Record in `SPIKES.md`: the exact `list_plugins()` return type and how to get `(enabled, error)` for a plugin by name; the env vars the spawned probe must set (`HERMES_HOME`, `HERMES_ENABLE_PROJECT_PLUGINS` if a project plugin).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/integration/test_spike_preflight.py tests/SPIKES.md
@@ -270,11 +270,11 @@ git commit -m "test(spike): per-profile load-status probe shape"
 - Create: `tests/integration/test_spike_fanout.py`
 - Modify: `tests/SPIKES.md`
 
-- [ ] **Step 1: Read the source**
+- [x] **Step 1: Read the source**
 
 Read `hermes_cli/kanban_db.py`: `create_task` (`:2155-2168`, `:2235-2245`), `recompute_ready` (`:2858-2908`), `link_tasks` (`:2356-2383`), `complete_task` (`:3576-3605`). Read `model_tools.py:991-1006` (post_tool_call args: `tool_name,args,result,task_id,**kwargs`; return ignored; exceptions swallowed). Record exact `ctx.dispatch_tool` return (JSON string) and `kanban_create` return (`{task_id,status}`).
 
-- [ ] **Step 2: Write the atomic-create test**
+- [x] **Step 2: Write the atomic-create test**
 
 ```python
 # tests/integration/test_spike_fanout.py
@@ -292,7 +292,7 @@ def test_join_created_with_all_parents_lands_todo_until_all_done(tmp_board, mk_c
     assert tmp_board.status(join) == "ready"  # promoted exactly when last parent done
 ```
 
-- [ ] **Step 3: Write the late-link demotion test**
+- [x] **Step 3: Write the late-link demotion test**
 
 ```python
 def test_linking_incomplete_parent_demotes_ready_join(tmp_board, mk_card, complete_card):
@@ -304,12 +304,12 @@ def test_linking_incomplete_parent_demotes_ready_join(tmp_board, mk_card, comple
     assert tmp_board.status(join) == "todo"   # demoted; safe for reconcile late re-link
 ```
 
-- [ ] **Step 4: Run + record**
+- [x] **Step 4: Run + record**
 
 Run: `pytest tests/integration/test_spike_fanout.py -v`
 Expected: PASS. Record confirmed `create_task`/`link_tasks` host signatures and the post_tool_call arg names in `SPIKES.md`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/integration/test_spike_fanout.py tests/SPIKES.md
@@ -326,11 +326,11 @@ git commit -m "test(spike): atomic create-with-parents, late-link demotion, fan-
 - Create: `tests/integration/test_spike_version_gate.py`
 - Modify: `tests/SPIKES.md`
 
-- [ ] **Step 1: Read the source**
+- [x] **Step 1: Read the source**
 
 Read `hermes_cli/kanban_db.py:6468` (`HERMES_HOME = resolve_profile_env(assignee)`), `tools/kanban_tools.py:705-707` (cross-task comment unrestricted, author forced). Record.
 
-- [ ] **Step 2: Write the cross-task comment test**
+- [x] **Step 2: Write the cross-task comment test**
 
 ```python
 # tests/integration/test_spike_version_gate.py
@@ -347,12 +347,12 @@ def test_worker_can_comment_on_foreign_root(tmp_board, mk_card, as_worker):
     assert "error" not in res.lower()  # foreign-root comment is allowed
 ```
 
-- [ ] **Step 3: Run + record**
+- [x] **Step 3: Run + record**
 
 Run: `pytest tests/integration/test_spike_version_gate.py -v`
 Record the confirmed "worker may comment on any card; author forced" behavior + that the hook/veto inherit the worker profile's plugin version.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/integration/test_spike_version_gate.py tests/SPIKES.md
@@ -369,11 +369,11 @@ git commit -m "test(spike): cross-task root comment for visible version-refuse"
 - Create: `tests/integration/test_spike_abandon.py`
 - Modify: `tests/SPIKES.md`
 
-- [ ] **Step 1: Read the source**
+- [x] **Step 1: Read the source**
 
 Read `hermes_cli/kanban_db.py:4486-4509` (`archive_task` → `recompute_ready`, nulls `worker_pid` only), reclaim/terminate paths (`:3229/3301/5229`), `_cleanup_workspace:3766-3783` (only scratch cleaned). Confirm there is no `kanban_archive`/`kanban_unlink` model tool (`tools/kanban_tools.py:1352-1424`). Record signatures for `kb.archive_task`, `kb.reclaim_task`/terminate.
 
-- [ ] **Step 2: Write the leaves-first archive test**
+- [x] **Step 2: Write the leaves-first archive test**
 
 ```python
 # tests/integration/test_spike_abandon.py
@@ -391,12 +391,12 @@ def test_archive_children_before_parent_no_transient_ready(tmp_board, mk_card):
     assert tmp_board.status(parent) == "archived"
 ```
 
-- [ ] **Step 3: Run + record**
+- [x] **Step 3: Run + record**
 
 Run: `pytest tests/integration/test_spike_abandon.py -v`
 Record `kb.archive_task` signature, reclaim/terminate signature, and "archive preserves non-scratch workspaces."
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/integration/test_spike_abandon.py tests/SPIKES.md
