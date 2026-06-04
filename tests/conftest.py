@@ -183,6 +183,81 @@ def seed_run(tmp_board):
 
 
 @pytest.fixture
+def started_run(fake_ctx, tmp_board, wf_repo, stub_preflight_ok):
+    """Return a ``started_run()`` callable: starts the shipped fix-flaky-tests
+    template against the real ``tmp_board.repo`` and returns the run root id.
+
+    Depends on ``wf_repo`` (real git repo for the ``fix`` worktree stage) and
+    ``stub_preflight_ok`` (the per-profile probe + orchestrator-context guard).
+    """
+    from hermes_workflow.tools import workflow_start
+
+    def _start():
+        tpl = (pathlib.Path(__file__).resolve().parents[1] / "examples"
+               / "fix-flaky-tests.workflow.yaml").read_text()
+        r = workflow_start(
+            fake_ctx, template_text=tpl, params={"repo": str(tmp_board.repo)},
+            bindings={"scout": "designer", "fixer": "coder", "reporter": "writer"},
+            board=tmp_board.name,
+        )
+        return r["root_id"]
+
+    return _start
+
+
+@pytest.fixture
+def partial_fanout(fake_ctx, tmp_board, started_run):
+    """Return a ``partial_fanout()`` callable producing the reconcile fixture state:
+
+    a fanned-out run where the ``fix`` ("fix",1,0) instance is MISSING (unlinked +
+    archived) and ("fix",0,0) has a DUPLICATE sharing its sentinel identity — the
+    original is ``done`` (a real run = the progress winner), the duplicate is empty.
+    Returns a ``Partial(root, winner, dup)`` namedtuple: the run root id, the
+    done-winner fix0 id, and the empty duplicate id. ``workflow_reconcile`` should
+    recreate the missing instance and the progress-aware dedup should archive the
+    empty duplicate.
+    """
+    from collections import namedtuple
+    from hermes_workflow.runview import RunView
+    from hermes_workflow.materialize import materialize
+    from hermes_workflow.board import WorkerBoard, HostBoard
+    Partial = namedtuple("Partial", "root winner dup")
+
+    def _make():
+        root = started_run()
+        # advance scan -> materialize the fix fan-out (fix0, fix1) + the joins
+        rv = RunView.from_root(fake_ctx, board=tmp_board.name, root_id=root)
+        scan = rv.card_id_for(("scan", 0, 0))
+        tmp_board.complete(scan, metadata={"flaky": [
+            {"test_id": "T1", "file": "a.py"}, {"test_id": "T2", "file": "b.py"}]})
+        rv2 = RunView.from_root(fake_ctx, board=tmp_board.name, root_id=root)
+        materialize(fake_ctx, board=tmp_board.name, root_id=root, runview=rv2)
+        rv3 = RunView.from_root(fake_ctx, board=tmp_board.name, root_id=root)
+        fix0 = rv3.card_id_for(("fix", 0, 0))
+        fix1 = rv3.card_id_for(("fix", 1, 0))
+
+        wb = WorkerBoard(fake_ctx, board=tmp_board.name)
+        # fix0 becomes the 'done' winner (a completed run carries progress)
+        tmp_board.complete(fix0, metadata={"branch": "wf/done"})
+        # DUPLICATE: a second live card sharing fix0's sentinel identity (create-race).
+        # Reusing fix0's exact body re-embeds the same sentinel -> Identity ("fix",0,0).
+        dup_body = wb.show(fix0)["body"]
+        dup = tmp_board.create(title="fix dup", parents=[scan], assignee="coder", body=dup_body)
+        # DROP ("fix",1,0): fully unlink + archive so the link-walk can't reach it
+        # and reconcile must recreate it.
+        card1 = wb.show(fix1)
+        hb = HostBoard(tmp_board.kb, tmp_board.conn, tmp_board.name)
+        for p in card1["parents"]:
+            hb.unlink(p, fix1)
+        for c in card1["children"]:
+            hb.unlink(fix1, c)
+        hb.archive(fix1)
+        return Partial(root=root, winner=fix0, dup=dup)
+
+    return _make
+
+
+@pytest.fixture
 def fake_ctx(hermes_root, tmp_board):
     """A tiny stand-in for a Hermes PluginContext exposing only dispatch_tool.
 
