@@ -92,6 +92,7 @@ class WorkerBoard:
             "children": raw.get("children", []),
             "runs": raw.get("runs", []),
             "comments": raw.get("comments", []),
+            "events": raw.get("events", []),
         }
 
 
