@@ -82,16 +82,25 @@ The full rationale (engine purity, the fail-open/fail-closed split) is in
 
 ## Dependency pinning policy
 
-This adopts Hermes' supply-chain rule:
+This adopts Hermes' supply-chain rule (rationale: the litellm and Mini
+Shai-Hulud supply-chain incidents; mutable tag refs — see Hermes
+`CONTRIBUTING.md` → "Dependency pinning policy"). Every dependency carries an
+upper bound to limit supply-chain attack surface:
 
-- **Every PyPI dependency** needs a `<next_major` upper bound — e.g.
-  `PyYAML>=6,<7`. An unbounded `>=X` spec will be rejected in review.
-- **GitHub Actions** are pinned by **full commit SHA** with a version comment:
-  `uses: owner/action@<sha>  # vX.Y.Z`.
+| Source | Treatment |
+|---|---|
+| **PyPI package** | `>=floor,<next_major` (e.g. `PyYAML>=6,<7`). For a **pre-1.0 (0.x)** package use `<0.(current_minor + 2)` (a tight minor window), **not** `<1`. |
+| **Git URL** (none today) | Full commit SHA (`git+https://…@<40-char-sha>`). |
+| **GitHub Actions** | Full commit SHA + version comment: `uses: owner/action@<sha>  # vX.Y.Z`. |
+| **CI-only pip install** | `==exact` (hermetic CI builds; churn is acceptable). |
 
-Today this repo depends only on **PyYAML** (runtime) and **pytest** (dev) — both
-already bounded in `pyproject.toml`. Keep it that way; new dependencies are a
-high bar.
+An unbounded `>=X` spec will be rejected in review.
+
+Today this repo's runtime/dev deps are **PyYAML** and **pytest**, and the
+build-system requires **setuptools** — all three bounded in `pyproject.toml`
+(including `[build-system].requires`). Keep it that way; new dependencies are a
+high bar. The `tests/unit/test_supply_chain_pins.py` meta-test (Task 2) enforces
+this in CI.
 
 ## Pull request process
 
