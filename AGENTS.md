@@ -201,6 +201,37 @@ Two tiers, **no LLM in any test**:
 whose teardown removes EXACTLY the callbacks it appended from the process-global
 `pre_tool_call` hook singleton (a leak corrupts every later test in the session).
 
+### Don't write change-detector tests
+
+A test that fails whenever data *expected to change* is updated (a version
+literal, an enumeration count, a catalog snapshot) adds no behavioural coverage —
+it just breaks CI on routine edits. Assert **relationships and invariants**, not
+snapshots.
+
+```
+DON'T:
+  assert PLUGIN_VERSION == "0.1.4"
+  assert len(KNOWN_LANES) == 2
+
+DO:
+  assert SCHEMA_VERSION in SUPPORTED_SCHEMA_VERSIONS
+  assert "codex" in KNOWN_LANES and "claude-code" not in KNOWN_LANES
+```
+
+Reviewers reject new change-detector tests; convert them into invariants first.
+(`test_no_raw_sqlite`, `test_engine_purity`, and `test_supply_chain_pins` are the
+model: they assert a property, not a snapshot.)
+
+### Why plain `pytest` (no hermetic wrapper)
+
+The plugin runs `python3 -m pytest` directly — there is no `scripts/run_tests.sh`.
+Tests use no LLM and no credentials, so the core's hermetic credential-stripping
+wrapper buys nothing here; the one process-global (`pre_tool_call` hooks) is
+isolated by the `register_pre_hook` fixture teardown, and `HERMES_HOME` is
+redirected to `tmp_path` by the `tmp_board` fixture. Per-test process isolation is
+intentionally **not** adopted. Coverage and the integration tier are not gated in
+CI (the latter needs a real Hermes checkout via `HERMES_AGENT_ROOT`).
+
 ## Definition of Done
 
 **Before you claim any task complete or open a PR you MUST run through every
