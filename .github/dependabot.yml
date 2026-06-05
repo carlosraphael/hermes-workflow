@@ -1,0 +1,27 @@
+# Dependabot for hermes-workflow.
+#
+# Scoped to github-actions ONLY. We do NOT enable the pip ecosystem: our two
+# PyPI deps (PyYAML, pytest) and the build-system setuptools pin are moved
+# deliberately under manual review (CONTRIBUTING.md "Dependency pinning policy"),
+# enforced by tests/unit/test_supply_chain_pins.py. Schedule-driven pip bump PRs
+# would undermine that. CVE-only security updates for pinned deps are enabled
+# separately via the repo's Dependabot security-updates setting.
+#
+# github-actions is the exception: we pin actions by full commit SHA, and those
+# frozen SHAs must be refreshed when upstream actions ship (usually security)
+# patches. Dependabot opens a PR with the new SHA; we review and merge like any
+# other PR. test_supply_chain_pins.py keeps every bump SHA-pinned.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(actions)"
+      include: "scope"
