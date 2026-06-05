@@ -636,7 +636,9 @@ def cli_setup(parser):
 
 
 def _read_template(path):
-    return pathlib.Path(path).read_text()
+    # utf-8-sig transparently strips a BOM (Windows/WSL2 GUI editors) and reads
+    # plain UTF-8 unchanged. Templates are the only on-disk read (CLI path).
+    return pathlib.Path(path).read_text(encoding="utf-8-sig")
 
 
 def _dispatch_ns(ctx, ns):

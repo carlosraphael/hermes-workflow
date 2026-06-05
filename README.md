@@ -38,6 +38,7 @@ from the host).
 
 - **Hermes Agent v0.15.x**
 - **Python ≥ 3.11**
+- **OS:** Linux or macOS (WSL2 on Windows). Native Windows is not supported in 0.x.
 - For any role with `lane: codex`: the `codex` binary on `PATH`, and Hermes'
   **bundled `kanban-codex-lane` skill** present in that role's bound profile.
   This plugin **reuses** that skill — it does **not** re-ship it.

@@ -176,6 +176,26 @@ Two tiers, **no LLM in any test**:
 whose teardown removes EXACTLY the callbacks it appended from the process-global
 `pre_tool_call` hook singleton (a leak corrupts every later test in the session).
 
+## Cross-platform
+
+**Posture: POSIX only — Linux, macOS, and WSL2 on Windows. Native Windows is out
+of scope for the 0.x line.** The engine is pure stdlib + PyYAML; the only OS
+surface is git subprocess calls and a per-profile subprocess spawn, both assuming
+a POSIX shell/path environment. The code stays cross-platform-clean by
+construction — preserve these when editing:
+
+- **No PID/signal liveness probes.** Idempotency is filesystem- and board-state
+  derived (`worktree.py` checks `(<path>/.git).exists()`), never `os.kill(pid, 0)`.
+- **Subprocess via argv lists, never a shell.** `subprocess.run(["git", "-C", …])`;
+  convert paths with `str(path)` only at the subprocess boundary.
+- **`pathlib` for all paths**; worktrees live under
+  `<repo>/../.hermes-workflow-worktrees/` (not a temp dir); no hardcoded `/tmp`.
+- **`git` is a hard prerequisite** (assumed on `PATH`); **`codex` is optional and
+  `shutil.which`-gated** in pre-flight — the asymmetry is intentional.
+- **Self-invocation via `[sys.executable, "-m", …]`**, never a shebang.
+- **No `psutil`** — the plugin owns no process lifecycle, so cross-platform
+  process remedies are intentionally N/A and the dependency floor stays at PyYAML.
+
 ## Known pitfalls
 
 - **Per-profile enablement is the #1 failure mode.** Workers load the plugin from
