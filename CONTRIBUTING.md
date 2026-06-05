@@ -151,8 +151,8 @@ upper bound to limit supply-chain attack surface:
 
 An unbounded `>=X` spec will be rejected in review.
 
-Today this repo's runtime/dev deps are **PyYAML** and **pytest**, and the
-build-system requires **setuptools** — all three bounded in `pyproject.toml`
+Today this repo's runtime/dev deps are **PyYAML**, **pytest**, and **ruff**, and the
+build-system requires **setuptools** — all four bounded in `pyproject.toml`
 (including `[build-system].requires`). Keep it that way; new dependencies are a
 high bar. The `tests/unit/test_supply_chain_pins.py` meta-test (Task 2) enforces
 this in CI.

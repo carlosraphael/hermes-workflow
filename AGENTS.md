@@ -130,6 +130,11 @@ say so in the description.
   both return a block dict on any error; `is_version_compatible` is total and
   returns `False` for anything it cannot positively confirm.
   _Pinned by `tests/unit/test_veto.py`._
+- **Fan-out fails OPEN.** The `post_tool_call` fan-out driver (`hooks.py::on_tool_done`)
+  is a side-effect that materializes the next layer; its whole body is one
+  try/except that logs and swallows and **never raises** — a raising side-effect
+  hook would wedge the worker that just completed legitimate work.
+  _Pinned by `tests/integration/test_hook_fanout.py`._
 - **Total version gate.** `parse_root_body` raises by design on a malformed root
   (callers wrap it and fail loud); `is_version_compatible` never raises. A
   schema-version mismatch is a *visible refuse*, never a silent mis-drive.

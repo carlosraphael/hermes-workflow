@@ -40,7 +40,7 @@ Fixes #
 python3 -m pytest -m 'not integration'   # unit suite (always runs)
 # Integration (real board, no LLM) needs a Hermes Agent v0.15.x checkout:
 export HERMES_AGENT_ROOT=/abs/path/to/hermes-agent
-python3 -m pytest                         # full suite (137 with the checkout)
+python3 -m pytest                         # full suite (integration tier included)
 ```
 
 1.
