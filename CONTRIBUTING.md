@@ -76,6 +76,20 @@ For how the code is laid out and how a run actually executes, read
   repetition, not speculative generality.
 - **Surgical changes** — touch only what the change requires; match the
   surrounding style; don't refactor what isn't broken.
+- **PEP 8**, with practical exceptions (no strict line-length enforcement; `ruff`
+  enforces the rest — see `[tool.ruff]` in `pyproject.toml`).
+- **Errors** — catch *specific* exceptions. A broad `except Exception` is
+  permitted ONLY at the deliberate seams: the `post_tool_call` fail-open hook,
+  the `pre_tool_call` fail-closed gate, the veto internal-error guard, and the
+  tool-handler error envelope (see
+  [AGENTS.md#key-invariants](AGENTS.md#key-invariants)). The engine, veto,
+  provenance, and worktree modules stay log-free (purity); the one log surface is
+  the fail-open hook, which uses `log.exception(...)` for swallowed errors. Never
+  log secrets.
+- **Comments** explain non-obvious intent, trade-offs, or quirks — not mechanics.
+- **Cross-platform** — never assume Unix (see
+  [AGENTS.md#cross-platform](AGENTS.md#cross-platform)); subprocess calls use
+  argv lists + `pathlib`, and the `git` / `codex` binaries are assumed on `PATH`.
 
 The full rationale (engine purity, the fail-open/fail-closed split) is in
 [AGENTS.md#working-principles](AGENTS.md#working-principles).
