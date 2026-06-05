@@ -100,8 +100,8 @@ or `worktree:<path>` (engine-pre-provisioned git worktree; the card is handed a
 `dir:<provisioned-path>` and gets the automatic commit-clean veto). Fan-out
 stages must **not** use `scratch`.
 
-**Worked example — scan → fix → approve → report** (mirrors
-`examples/fix-flaky-tests.workflow.yaml`):
+**Worked example — scan → fix → approve → report** (a self-contained teaching
+template; see `examples/` for full, realistic templates):
 
 ```yaml
 name: fix-flaky-tests

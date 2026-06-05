@@ -48,7 +48,7 @@ and the slash `/workflow <verb>`. All return JSON.
 
 ```bash
 hermes workflow start --template <path> \
-  --bindings '{"scout":"designer","fixer":"coder","reporter":"designer"}' \
+  --bindings '{"architect":"designer","builder":"coder","tester":"designer","reporter":"writer"}' \
   [--params '{"repo":"/r"}'] [--board <name>]
 hermes workflow status <root_id> [--board <name>]
 hermes workflow approve <gate_card> [--board <name>]

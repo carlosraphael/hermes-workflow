@@ -1,0 +1,74 @@
+# feature-delivery.workflow.yaml
+name: feature-delivery
+version: 0.1.0
+description: Deliver a feature end-to-end — design, parallel implement in worktrees, integrate, test, human review, open PR.
+
+params:
+  repo:    { type: string, required: true }
+  feature: { type: string, required: true }   # the feature to deliver, in a sentence
+
+roles:
+  architect: { lane: profile }
+  builder:   { lane: codex }               # reuses Hermes' bundled kanban-codex-lane skill
+  tester:    { lane: profile }
+  reporter:  { lane: profile }
+
+stages:
+  - id: design
+    role: architect
+    title: "Design: ${params.feature}"
+    body: |
+      Break ${params.feature} into independent, parallelizable subtasks grounded in
+      real files of ${params.repo}. Subtasks must NOT overlap in files. Return
+      metadata.subtasks as a JSON list (max 10), each EXACTLY
+      {title: "<imperative>", files: "<comma-separated paths>", acceptance: "<one-line done check>"}.
+      Do not write code.
+    workspace: "dir:${params.repo}"
+    expand_out: { key: subtasks, max: 10, item: { title: string, files: string, acceptance: string } }
+
+  - id: implement
+    role: builder
+    needs: [design]
+    expand: { over: design.subtasks, as: task }   # single-level fan-out: 1 worktree card per subtask
+    title: "Implement ${task.title}"
+    body: |
+      Implement "${task.title}". Edit only the files named in the handoff
+      (${task.files}); add or update tests; satisfy the acceptance check
+      (${task.acceptance}). Keep it self-contained — do not touch files owned by other
+      subtasks. Commit on this worktree before completing.
+      Return metadata = {branch: "<branch>", files: ["<paths>"], tests: ["<test ids>"]}.
+    workspace: "worktree:${params.repo}"
+
+  - id: integrate
+    role: architect
+    needs: [implement]                       # join over ALL implement instances
+    title: "Integrate onto a feature branch"
+    body: |
+      Merge each parent handoff's metadata.branch onto a single feature branch in
+      ${params.repo}. Reconcile overlapping edits; resolve conflicts; commit before completing.
+      Return metadata = {feature_branch: "<branch>", subtask_branches: ["<branch>"]}.
+    workspace: "dir:${params.repo}"
+
+  - id: test
+    role: tester
+    needs: [integrate]
+    title: "Run the test suite"
+    body: |
+      Detect the runner (pytest / npm test / go test ./… ) and run the full suite on the
+      feature branch. Fix the implementation, not the tests, unless a test is wrong.
+      Commit any fixes before completing.
+    workspace: "dir:${params.repo}"
+
+  - id: review
+    needs: [test]
+    gate:  human                             # non-spawnable; resolve via `hermes workflow approve|abandon`
+
+  - id: ship
+    role: reporter
+    needs: [review, integrate]               # review = ordering; integrate = data
+    title: "Open the PR"
+    body: |
+      Open a pull request from the feature branch into the default branch (or, with no
+      remote, summarize the merge). Title it after ${params.feature}; list the subtask
+      branches (from integrate's handoff). Report the PR URL (or branch name).
+    workspace: "dir:${params.repo}"
