@@ -1,0 +1,25 @@
+name: osv-scanner
+
+# Scan declared dependencies for known vulnerabilities (OSV). Pinning bounds the
+# upgrade window; OSV catches a known-bad version landing INSIDE the allowed
+# range. Action SHA-pinned per CONTRIBUTING.md "Dependency pinning policy".
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"   # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+        with:
+          scan-args: |-
+            --lockfile=pyproject.toml
+            ./
