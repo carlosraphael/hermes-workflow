@@ -84,38 +84,42 @@ codex role is missing its `codex` binary / `kanban-codex-lane` skill).
 
 ## Quickstart
 
-Using `examples/fix-flaky-tests.workflow.yaml`. There are two surfaces; both take
-the same arguments.
+Using `examples/build-hermes-plugin.workflow.yaml` — a workflow that **dogfoods
+this repo**, extending `hermes-workflow` with new `workflow_*` surfaces. Both
+invocation surfaces — the slash command and the CLI — take the same arguments.
+(`examples/feature-delivery.workflow.yaml` is a second, generic feature-delivery
+SDLC you can run against any repo.)
 
 In-session slash command:
 
 ```
-/workflow start --template examples/fix-flaky-tests.workflow.yaml \
-  --params '{"repo":"/abs/path/to/repo"}' \
-  --bindings '{"scout":"designer","fixer":"coder","reporter":"writer"}'
+/workflow start --template examples/build-hermes-plugin.workflow.yaml \
+  --params '{"repo":"/abs/path/to/hermes-workflow","capability":"a workflow_pause/workflow_resume tool pair"}' \
+  --bindings '{"architect":"designer","builder":"coder","tester":"designer","reporter":"writer"}'
 ```
 
 CLI:
 
 ```sh
-hermes workflow start --template examples/fix-flaky-tests.workflow.yaml \
-  --params '{"repo":"/abs/path/to/repo"}' \
-  --bindings '{"scout":"designer","fixer":"coder","reporter":"writer"}'
+hermes workflow start --template examples/build-hermes-plugin.workflow.yaml \
+  --params '{"repo":"/abs/path/to/hermes-workflow","capability":"a workflow_pause/workflow_resume tool pair"}' \
+  --bindings '{"architect":"designer","builder":"coder","tester":"designer","reporter":"writer"}'
 ```
 
 ### Run lifecycle
 
-1. The `scan` worker (role `scout`) inspects the repo and returns
-   `metadata.flaky = [{test_id, file}, …]`.
-2. The fan-out hook creates one `fix` card per flaky test — each on its own
-   pre-provisioned worktree, gated by commit-clean — and wires the `approve`
-   human gate as a child of all of them.
-3. Once every `fix` card is `done`, the gate promotes to `ready`.
-4. The operator runs `hermes workflow approve <gate_card>`. Find the gate card
-   with `hermes workflow status <root_id>` (it is listed under
-   `awaiting_approval`).
-5. `report` (role `reporter`) then runs, summarizing the fixes from the
-   handoffs and listing the branches.
+1. The `spec` worker (role `architect`) decomposes the `capability` and returns
+   `metadata.surfaces = [{name, kind, summary}, …]`.
+2. The fan-out hook creates one `implement` card per surface — each on its own
+   pre-provisioned worktree, gated by commit-clean — and wires the `integrate`
+   join as a child of all of them.
+3. `integrate` (role `architect`) merges the per-surface branches; `test` (role
+   `tester`) then runs the suite.
+4. The `review` human gate promotes to `ready`. The operator runs `hermes
+   workflow approve <gate_card>` — find it under `awaiting_approval` via `hermes
+   workflow status <root_id>`.
+5. `report` (role `reporter`) then runs, summarizing the added surfaces and the
+   branches from the handoffs.
 
 ## Commands
 

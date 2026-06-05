@@ -1,12 +1,11 @@
 # build-hermes-plugin.workflow.yaml
 name: build-hermes-plugin
 version: 0.1.0
-description: Design a plugin's tools, build each in an isolated worktree, integrate, test, gate, enable.
+description: Extend hermes-workflow with new workflow_* surfaces — one worktree per surface, integrate, test, gate, report.
 
 params:
-  repo:        { type: string, required: true }   # the git repo the worktrees branch from
-  plugin_name: { type: string, required: true }
-  purpose:     { type: string, required: true }
+  repo:       { type: string, required: true }   # a hermes-workflow checkout
+  capability: { type: string, required: true }   # what to add, e.g. "a workflow_pause/workflow_resume tool pair"
 
 roles:
   architect: { lane: profile }
@@ -17,42 +16,70 @@ roles:
 stages:
   - id: spec
     role: architect
-    title: "Design ${params.plugin_name}: ${params.purpose}"
+    title: "Decompose: ${params.capability}"
     body: |
-      Decompose ${params.plugin_name} (${params.purpose}) into the tools it
-      needs. Return metadata.tools as a list of {name, description}. Do not
-      write code.
+      Decompose ${params.capability} into the concrete surfaces to add to
+      hermes-workflow. Follow AGENTS.md "Adding a tool or hook" and the CONTEXT.md
+      naming taxonomy (runtime surface is the unprefixed `workflow`).
+      Return metadata.surfaces as a JSON list (max 6), each EXACTLY
+      {name: "<tool name, e.g. workflow_pause>", kind: "tool"|"hook",
+       summary: "<one line>"}. Emit nothing outside metadata. Do not write code.
     workspace: "dir:${params.repo}"
-    expand_out: { key: tools, max: 20, item: { name: string, description: string } }
+    expand_out: { key: surfaces, max: 6, item: { name: string, kind: string, summary: string } }
 
   - id: implement
     role: builder
     needs: [spec]
-    expand: { over: spec.tools, as: tool }   # single-level fan-out: 1 worktree card per tool
-    title: "Implement tool ${tool.name}"
-    body:  "Implement ${tool.name} (${tool.description}) for the ${params.plugin_name} plugin. Keep it self-contained. Commit before completing."
+    expand: { over: spec.surfaces, as: s }   # single-level fan-out: 1 worktree card per surface
+    title: "Implement ${s.name} (${s.kind})"
+    body: |
+      Add the ${s.kind} ${s.name} per AGENTS.md "Adding a tool or hook":
+      - tool: write ${s.name}(ctx, *, …) in src/hermes_workflow/tools.py returning a
+        plain dict ({"error": …} on failure — the flat-error contract); if it mutates,
+        call _require_orchestrator(...). Add its schema dict + a TOOL_SPECS entry
+        (register(ctx) wires it automatically).
+      - hook: add the callback in src/hermes_workflow/hooks.py and register it in
+        register(ctx) (__init__.py), bound to ctx via a closure; match the channel's
+        failure mode (post_tool_call fail-open, pre_tool_call fail-closed).
+      Add a pure unit test under tests/unit/ (import hermes_workflow only; no board, no LLM).
+      Touch ONLY the file(s) your surface kind requires plus your new test file. Run
+      `python3 -m pytest tests/unit`. Commit on this worktree before completing.
+      Return metadata = {branch: "<branch>", files: ["<paths>"]}.
     workspace: "worktree:${params.repo}"
 
   - id: integrate
     role: architect
     needs: [implement]                       # join over ALL implement instances
-    title: "Integrate the tools into one ${params.plugin_name} plugin"
-    body:  "Collect the per-tool branches from the parent handoffs into a single ${params.plugin_name} plugin. Commit before completing."
+    title: "Integrate the new surfaces"
+    body: |
+      Collect each parent handoff's metadata.branch. Merge them onto one integration
+      branch in ${params.repo}. Confirm every new tool flows through the
+      TOOL_SPECS → make_tool_handler → register(ctx) loop. Keep the engine pure
+      (stdlib + PyYAML + intra-package only). Resolve conflicts; commit before completing.
+      Return metadata = {integration_branch: "<branch>", surface_branches: ["<branch>"]}.
     workspace: "dir:${params.repo}"
 
   - id: test
     role: tester
     needs: [integrate]
-    title: "Run the ${params.plugin_name} test suite"
-    body:  "Run the plugin's tests and commit any fixes. Commit before completing."
+    title: "Run the suite"
+    body: |
+      Run `python3 -m pytest` on the integration branch (unit always; integration
+      skips without HERMES_AGENT_ROOT). Fix the implementation, not the tests, unless
+      a test is wrong. Keep the AGENTS.md key invariants intact (no raw SQLite; gate
+      fail-closed; fan-out hook fail-open). Commit any fixes before completing.
     workspace: "dir:${params.repo}"
 
   - id: review
     needs: [test]
-    gate:  human
+    gate:  human                             # non-spawnable; resolve via `hermes workflow approve|abandon`
 
-  - id: enable
+  - id: report
     role: reporter
-    needs: [review]                          # data already consolidated by integrate; only ordering needed here
-    title: "Report and enable ${params.plugin_name}"
-    body:  "Summarize the build and list how to enable ${params.plugin_name}."
+    needs: [review, integrate]               # review = ordering; integrate = data
+    title: "Report"
+    body: |
+      Summarize the surfaces added for ${params.capability}, the integration branch
+      and the per-surface branches (from integrate's handoff). List how to exercise each
+      new surface: `hermes workflow <verb>` / `/workflow <verb>` / the `workflow_<verb>`
+      tool directly (e.g. `workflow_pause`).

@@ -10,6 +10,34 @@ Versions refer to the **distribution** `hermes-workflow`; the run-snapshot
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-06-05
+
+Examples + documentation release. No plugin runtime behaviour changed.
+
+### Changed
+
+- **`build-hermes-plugin` example** rewritten as a dogfooding workflow that
+  extends `hermes-workflow` itself with new `workflow_*` surfaces — params
+  `repo` + `capability`; stages `spec → implement → integrate → test → review →
+  report`; bodies cite the real "Adding a tool or hook" contract
+  ([`AGENTS.md`](AGENTS.md)) with explicit files, the `metadata` return
+  contract, and commit/scope instructions per stage.
+- Quickstart and the bundled `workflow-author` / `workflow-orchestrator` skills
+  retargeted off the removed `fix-flaky-tests` example.
+
+### Added
+
+- **`feature-delivery` example** — a generic, repo-agnostic feature-delivery
+  SDLC: `design → implement (parallel worktrees) → integrate → test → review →
+  ship (open PR)`.
+
+### Removed
+
+- `fix-flaky-tests` is no longer a shipped example; it now lives as the
+  integration smoke fixture
+  [`tests/integration/fixtures/fanout-smoke.workflow.yaml`](tests/integration/fixtures/fanout-smoke.workflow.yaml),
+  decoupling the test suite from the example catalog.
+
 ## [0.1.3] - 2026-06-04
 
 Governance and release-tooling release — first published to PyPI. No plugin
@@ -123,7 +151,8 @@ over the Hermes Kanban board, shipped as a standalone (entry-point) plugin.
 - **Packaging:** entry-point plugin (`hermes_agent.plugins`); the wheel ships
   `plugin.yaml` and the bundled skills via `package-data`.
 
-[Unreleased]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/carlosraphael/hermes-workflow/compare/v0.1.0...v0.1.1

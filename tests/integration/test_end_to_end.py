@@ -3,9 +3,8 @@ import json, pathlib, pytest
 
 pytestmark = pytest.mark.integration
 
-# Repo-root-relative (NOT cwd-relative): from tests/integration/, parents[2] is
-# the repo root. Mirrors tests/unit/test_examples_validate.py.
-EXAMPLE = pathlib.Path(__file__).parents[2] / "examples" / "fix-flaky-tests.workflow.yaml"
+# The fan-out smoke fixture owned by the integration suite (sibling fixtures/ dir).
+EXAMPLE = pathlib.Path(__file__).parent / "fixtures" / "fanout-smoke.workflow.yaml"
 
 
 def test_full_run(fake_ctx, tmp_board, wf_repo, stub_preflight_ok):
