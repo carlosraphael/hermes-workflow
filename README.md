@@ -164,6 +164,8 @@ Lanes are `{profile, codex}` only — `claude-code` is deferred to 0.2.x.
 | [`docs/operations.md`](docs/operations.md) | Upgrade / version-gate procedure and operational caveats. |
 | [`CONTEXT.md`](CONTEXT.md) | The naming taxonomy (distribution / import / plugin / runtime layers). |
 | [`docs/adr/`](docs/adr/) | Architecture decision records. |
+| [`SECURITY.md`](SECURITY.md) | Security policy, supported versions, private GHSA reporting. |
+| [`examples/`](examples/) | Runnable `*.workflow.yaml` templates (the Quickstart on-ramp). |
 
 ## Contributing
 

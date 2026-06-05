@@ -23,10 +23,34 @@ What's wanted, in order:
 - Nested fan-out — an `expand` stage that is itself an `expand` source — is
   **forbidden** in 0.1.0.
 
-End-goal: this matures into an official Hermes Agent contribution. Conform to
-Hermes conventions throughout (Conventional Commits, the skill-vs-tool split, the
-dependency-pinning policy below) so the eventual upstreaming is mechanical, not a
-rewrite.
+## Conformance & upstreaming
+
+This plugin is built to be **incorporated into the official
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) repo** once mature.
+That is only possible if it already meets Hermes' governance, conventions, and
+standards — so the eventual upstreaming is **mechanical, not a rewrite**. Every
+governance file here deliberately tracks its upstream counterpart:
+
+| This repo | Upstream counterpart | Notes |
+|---|---|---|
+| `AGENTS.md` | `AGENTS.md` | Engineering contract + invariants + Definition of Done. |
+| `CONTRIBUTING.md` | `CONTRIBUTING.md` | This file: priorities, skill-vs-tool, pinning, commits. |
+| `SECURITY.md` | `SECURITY.md` | Inherits Hermes' trust model; states plugin-specific guarantees. |
+| `CONTEXT.md` | — | Plugin-specific naming taxonomy (no upstream analogue needed). |
+| `docs/adr/` | — | Architecture decision records (e.g. the standalone-plugin model). |
+
+**Standalone, not in-tree.** The plugin ships as a standalone pip/entry-point
+repo and reaches Hermes only through the generic plugin surface (`ctx.register_*`
+in `register(ctx)`) — it never patches Hermes core (see
+[AGENTS.md#key-invariants](AGENTS.md#key-invariants) and ADR-0001).
+
+**Maturity gates for in-tree contribution:** a stable `0.2.x`+ surface; the
+absolute→relative import conversion noted in ADR-0001; and a green conformance
+audit (`docs/audit/`). Until then it stays a standalone repo.
+
+Conform to Hermes conventions throughout (Conventional Commits with scopes, the
+skill-vs-tool split, the dependency-pinning policy below) so upstreaming stays
+mechanical.
 
 ## Should it be a Skill or a Tool?
 
@@ -173,5 +197,5 @@ licensed under it.
 
 ---
 
-_Future work / not yet in place:_ `SECURITY.md`, issue/PR templates, a
-`CHANGELOG`, a broader test-convention audit, and PyPI publishing.
+_Deferred to 0.2.x:_ the `claude-code` lane, `verify` / `retry`, and granular
+`reject` / `modify` (see the 0.1.0 scope above).
