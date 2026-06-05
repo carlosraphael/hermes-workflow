@@ -1,4 +1,7 @@
-# fix-flaky-tests.workflow.yaml
+# fanout-smoke.workflow.yaml — integration-suite fan-out smoke fixture.
+# NOT a shipped example. The engine tests assert on this EXACT shape
+# (stages scan/fix/approve/report, expand_out key `flaky` of {test_id,file},
+# roles scout/fixer/reporter) — do not add realistic detail or rename internals.
 name: fix-flaky-tests
 version: 0.1.0                            # template version — independent of plugin version
 description: Find flaky tests, fix each in isolation (committed), gate, report.

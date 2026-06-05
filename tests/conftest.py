@@ -184,8 +184,8 @@ def seed_run(tmp_board):
 
 @pytest.fixture
 def started_run(fake_ctx, tmp_board, wf_repo, stub_preflight_ok):
-    """Return a ``started_run()`` callable: starts the shipped fix-flaky-tests
-    template against the real ``tmp_board.repo`` and returns the run root id.
+    """Return a ``started_run()`` callable: starts the fan-out smoke fixture
+    against the real ``tmp_board.repo`` and returns the run root id.
 
     Depends on ``wf_repo`` (real git repo for the ``fix`` worktree stage) and
     ``stub_preflight_ok`` (the per-profile probe + orchestrator-context guard).
@@ -193,8 +193,8 @@ def started_run(fake_ctx, tmp_board, wf_repo, stub_preflight_ok):
     from hermes_workflow.tools import workflow_start
 
     def _start():
-        tpl = (pathlib.Path(__file__).resolve().parents[1] / "examples"
-               / "fix-flaky-tests.workflow.yaml").read_text()
+        tpl = (pathlib.Path(__file__).resolve().parent / "integration"
+               / "fixtures" / "fanout-smoke.workflow.yaml").read_text()
         r = workflow_start(
             fake_ctx, template_text=tpl, params={"repo": str(tmp_board.repo)},
             bindings={"scout": "designer", "fixer": "coder", "reporter": "writer"},
