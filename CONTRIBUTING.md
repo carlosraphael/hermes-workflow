@@ -45,6 +45,23 @@ A lightweight adaptation of Hermes' guidance. This plugin ships **both** — six
 
 When in doubt, prefer a skill; a new tool needs a deterministic reason to exist.
 
+### Skill authoring
+
+The two bundled skills (`workflow-author`, `workflow-orchestrator`) follow Hermes'
+skill standards; a contributed or modified skill must too:
+
+- **`description`** ≤ 60 characters, one sentence, ends with a period; state the
+  capability, no marketing words, don't repeat the skill name.
+- **Reference Hermes tools by name** in backticks (`kanban_*`, `workflow_*`,
+  `terminal`, …) — not raw shell utilities; name any expected MCP server in
+  `## Prerequisites`.
+- **Section order:** `# <Skill> Skill` title, a 2-3 sentence intro, then
+  `When to Use` / `Prerequisites` / `How to Run` / `Quick Reference` /
+  `Procedure` / `Pitfalls` / `Verification`. Target ~100-200 lines.
+- **If a skill ships scripts**, test them under stdlib + pytest with no live
+  network.
+- **Credit the human author first** in `author`.
+
 ## Development setup
 
 ```sh
