@@ -117,3 +117,39 @@ This audit rests on three layers of evidence:
   guard, the tool-handler error envelope, and the fail-soft provenance
   `extract_sentinel`) — consistent with `CONTRIBUTING.md`'s "4 sanctioned seams"
   rule, which governs *where* broad-`except` is permitted, not a raw count.
+
+## Confirmation sweep (Phase 2)
+
+Run against the whole package to re-verify the by-construction code postures and
+the gate suite. **No residual or newly-found drift; no new matrix row warranted.**
+
+By-construction sweeps over `src/` — each must return no matches:
+
+```text
+os.kill|os.killpg|os.fork|signal.SIG|psutil  → clean: no pid/signal/psutil
+/tmp/|/var/tmp/|/proc/|tempfile|gettempdir|mkdtemp  → clean: no temp/proc paths
+shell=True                                    → clean: no shell=True
+#!/  (shebangs)                               → clean: no shebangs
+```
+
+Gates:
+
+```text
+python -m pytest -m 'not integration' -q                 → 71 passed, 72 deselected
+HERMES_AGENT_ROOT=… python -m pytest -m integration -q   → 72 passed, 71 deselected
+ruff check src tests                                     → All checks passed!
+```
+
+(The lint gate is `ruff check` only — the shipped posture is lint-only, with no
+`ruff format` step; see matrix row 6.)
+
+### Exit criteria
+
+- ✅ No row marked CRITICAL or HIGH (open or otherwise).
+- ✅ Every applicable upstream rule is satisfied (`fixed-P1` / `conformant`) or
+  carries a documented N/A-by-posture.
+- ✅ All three invariant meta-tests (`test_supply_chain_pins`, `test_engine_purity`,
+  `test_read_template`) pass within the green unit tier.
+- ✅ Phase-1 closures (Tasks 1–14) and this audit report (Task 15) are committed on
+  `chore/hermes-grade-governance-conformance`.
+- ✅ Confirmation sweep clean — nothing for the residual-remediation step to fix.
