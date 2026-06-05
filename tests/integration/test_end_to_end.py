@@ -1,5 +1,7 @@
 # tests/integration/test_end_to_end.py
-import json, pathlib, pytest
+import json
+import pathlib
+import pytest
 
 pytestmark = pytest.mark.integration
 

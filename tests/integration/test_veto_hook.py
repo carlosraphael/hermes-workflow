@@ -1,10 +1,14 @@
-import json, subprocess, pathlib, pytest
+import json
+import subprocess
+import pathlib
+import pytest
 
 pytestmark = pytest.mark.integration
 
 
 def _init_git_repo(tmp_path):
-    repo = tmp_path / "repo"; repo.mkdir()
+    repo = tmp_path / "repo"
+    repo.mkdir()
     subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
     (repo / "f").write_text("x")
     subprocess.run(["git", "add", "f"], cwd=repo, check=True, capture_output=True)
