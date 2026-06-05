@@ -25,7 +25,10 @@ no hardcoded temp paths, no `psutil`), and broad `except` is confined to the fou
 documented fail-open/fail-closed seams. `AGENTS.md` is now an enforceable contract:
 9 merge-blocking Key Invariants (7 of 9 test-pinned) plus a mandatory, evidence-backed
 `## Definition of Done` gate. All gates are green (71 unit + 72 integration passed,
-`ruff check` clean). The Phase-2 confirmation sweep (below) surfaced **no residuals**.
+`ruff check` clean). The Phase-2 confirmation sweep (below) was clean locally; the
+first cloud CI run surfaced **two MEDIUM residuals in the OSV workflow** (a
+mis-pointed `--lockfile`, and a dev-only `pytest` advisory inside its pin) — both
+remediated and re-verified, so the result stands.
 
 ## Traceability matrix
 
@@ -41,7 +44,7 @@ against the live files during this audit (see Methodology).
 | 2 | Supply-chain audit **gate** (make the pinning rule self-enforcing in CI) | M | fixed-P1 | **`tests/unit/test_supply_chain_pins.py`** — a CI unit meta-test (every dep upper-bounded + every Action SHA-pinned). Realized as a unit test, **not** a `supply-chain-audit.yml` workflow (none exists). |
 | 3 | CI-only pip `==exact` on the publish/build path | M | fixed-P1 | `release.yml` Build step pinned `python -m pip install "build==1.5.0"`; `pyproject.toml` `[build-system].requires = ["setuptools>=61,<81"]` |
 | 4 | GitHub Actions SHA-pinned + automated refresh | M | conformant + fixed-P1 | all `uses:` already pinned to a 40-char SHA + `# vX.Y.Z` comment (6 distinct SHAs across ci/osv/release); `.github/dependabot.yml` (github-actions ecosystem only) refreshes them |
-| 5 | OSV / known-vulnerability scanning | M | fixed-P1 | `.github/workflows/osv-scanner.yml` — `google/osv-scanner-action/…@9a498708…edbc2 # v2.3.8` (SHA-pinned), PR + weekly (Mon 06:00 UTC) + dispatch, scans `--lockfile=pyproject.toml` |
+| 5 | OSV / known-vulnerability scanning | M | fixed-P1 (+P2 residual) | `.github/workflows/osv-scanner.yml` — `google/osv-scanner-action/…@9a498708…edbc2 # v2.3.8` (SHA-pinned), PR + weekly (Mon 06:00 UTC) + dispatch. Resolves the declared deps to a `requirements.txt` (`pip freeze`, which excludes pip/setuptools/wheel) and scans it with `--no-resolve`. (Originally pointed `--lockfile` at `pyproject.toml`, which OSV cannot extract — fixed in Phase-2 residual R1; see Confirmation sweep.) |
 | 6 | Lint in CI | L | fixed-P1 | `ci.yml` `lint` job runs **`ruff check src tests` (lint-only)** + `[tool.ruff.lint] select=["E","F","B","UP"], ignore=["E501"]`. **No `ruff format` / no `[tool.ruff.format]` / no isort `I`** — a deliberate scope correction honoring upstream's "no formatter" posture and the surgical-changes principle. `ruff>=0.15,<0.17` in dev extras. |
 | 7 | Conventional Commits `type(scope):` + plugin scope list | M | fixed-P1 | `CONTRIBUTING.md` "Pull request process" (scope list + ci/build/packaging/deps fold into `chore`); `.github/pull_request_template.md` (scoped checkbox + Type-of-Change matrix) — kept in lockstep |
 | 8 | Code style (PEP 8, catch-*specific*-exceptions, logging, comments, cross-platform) | M | fixed-P1 | `CONTRIBUTING.md` "Code style" — names the 4 sanctioned broad-`except` seams + log-free purity + `log.exception` fail-open surface |
@@ -121,7 +124,8 @@ This audit rests on three layers of evidence:
 ## Confirmation sweep (Phase 2)
 
 Run against the whole package to re-verify the by-construction code postures and
-the gate suite. **No residual or newly-found drift; no new matrix row warranted.**
+the gate suite. The local sweeps below are clean; the **cloud CI run on PR #9**
+then surfaced two residuals in the Phase-1 OSV workflow, both remediated (R1, R2).
 
 By-construction sweeps over `src/` — each must return no matches:
 
@@ -143,6 +147,30 @@ ruff check src tests                                     → All checks passed!
 (The lint gate is `ruff check` only — the shipped posture is lint-only, with no
 `ruff format` step; see matrix row 6.)
 
+### Residuals found by CI and remediated
+
+The local sweep cannot exercise the GitHub-only workflows; the first PR run did.
+Both residuals are MEDIUM (a non-functional CI gate / a dev-only advisory), so the
+"no open CRITICAL/HIGH" result is unchanged. Each was fixed as its own commit.
+
+- **R1 — OSV workflow could not scan (MEDIUM).** `osv-scanner.yml` passed
+  `--lockfile=pyproject.toml`; OSV-Scanner v2.3.8 has no extractor for a
+  `pyproject.toml` manifest, so the scan made **0 extractions and exited 127** — the
+  supply-chain CI gate was effectively a no-op-that-fails. **Fix (`fix(ci):`):**
+  resolve the declared deps to a `requirements.txt` in CI (`pip install '.[dev]'` →
+  `pip freeze --exclude hermes-workflow`, which omits pip/setuptools/wheel) and scan
+  with `--no-resolve` (deterministic; no transitive-RPC dependency). Verified locally
+  with the exact `osv-scanner 2.3.8` → "No issues found", exit 0.
+- **R2 — known advisory inside a pinned range (MEDIUM).** Once R1 made the scan
+  functional, it flagged **`pytest 8.4.2` → `GHSA-6w46-j5rx-g56g`** ("pytest
+  vulnerable tmpdir handling": predictable `/tmp/pytest-of-{user}` path on UNIX,
+  local DoS / possible priv-esc; fixed in **9.0.3**) — a known-bad version landing
+  inside the `pytest>=8,<9` pin, exactly what this gate exists to catch. **Fix
+  (`fix(deps):`):** bump the dev pin to `pytest>=9,<10` (the advisory affects all
+  8.x). pytest is dev/test-only (never shipped), but bumping is the cheaper, honest
+  remediation than an ignore-list. Suite verified green on pytest 9.0.3 (71 unit +
+  72 integration); `test_supply_chain_pins` still passes (the new bound is upper-bounded).
+
 ### Exit criteria
 
 - ✅ No row marked CRITICAL or HIGH (open or otherwise).
@@ -152,4 +180,6 @@ ruff check src tests                                     → All checks passed!
   `test_read_template`) pass within the green unit tier.
 - ✅ Phase-1 closures (Tasks 1–14) and this audit report (Task 15) are committed on
   `chore/hermes-grade-governance-conformance`.
-- ✅ Confirmation sweep clean — nothing for the residual-remediation step to fix.
+- ✅ Local confirmation sweep clean; the two CI-surfaced residuals (R1, R2) are both
+  remediated and re-verified (OSV scan green; suite green on pytest 9.0.3). No open
+  CRITICAL/HIGH remains.
