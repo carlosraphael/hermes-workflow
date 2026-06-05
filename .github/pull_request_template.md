@@ -19,12 +19,12 @@ Fixes #
 
 <!-- Check the one that applies — it should match your branch prefix and commit type. -->
 
-- [ ] 🐛 Bug fix — restores a broken invariant (`fix/…`, `fix:`)
-- [ ] ✅ Tests — coverage for an existing surface (`test/…`, `test:`)
-- [ ] 📝 Documentation (`docs/…`, `docs:`)
-- [ ] ✨ New behaviour — **within the 0.1.0 scope** (`feat/…`, `feat:`)
-- [ ] ♻️ Refactor — no behaviour change (`refactor/…`, `refactor:`)
-- [ ] 🔧 Chore / CI / packaging (`chore/…`, `chore:`)
+- [ ] 🐛 Bug fix — restores a broken invariant (`fix/…`, `fix(scope):`)
+- [ ] ✅ Tests — coverage for an existing surface (`test/…`, `test(scope):`)
+- [ ] 📝 Documentation (`docs/…`, `docs(scope):`)
+- [ ] ✨ New behaviour — **within the 0.1.0 scope** (`feat/…`, `feat(scope):`)
+- [ ] ♻️ Refactor — no behaviour change (`refactor/…`, `refactor(scope):`)
+- [ ] 🔧 Chore / CI / packaging (`chore/…`, `chore(scope):`)
 
 ## Changes Made
 
@@ -40,7 +40,7 @@ Fixes #
 python3 -m pytest -m 'not integration'   # unit suite (always runs)
 # Integration (real board, no LLM) needs a Hermes Agent v0.15.x checkout:
 export HERMES_AGENT_ROOT=/abs/path/to/hermes-agent
-python3 -m pytest                         # full suite (137 with the checkout)
+python3 -m pytest                         # full suite (integration tier included)
 ```
 
 1.
@@ -52,7 +52,7 @@ python3 -m pytest                         # full suite (137 with the checkout)
 
 ### Contribution hygiene
 
-- [ ] My commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`fix:`, `feat:`, `test:`, `docs:`, `refactor:`, `chore:`, `perf:`)
+- [ ] My commits follow [Conventional Commits](https://www.conventionalcommits.org/) in `type(scope):` form (`fix(veto):`, `feat(engine):`, `test(provenance):`, `docs(agents):`, `chore(ci):`, … — scope optional for repo-wide changes)
 - [ ] My branch is named `type/short-slug`
 - [ ] This PR is **one logical change** — no unrelated fix/refactor/feature mixed in
 - [ ] I searched for [existing PRs](https://github.com/carlosraphael/hermes-workflow/pulls) so this isn't a duplicate

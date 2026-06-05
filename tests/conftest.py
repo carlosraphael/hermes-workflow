@@ -1,5 +1,10 @@
 # tests/conftest.py
-import contextlib, os, subprocess, sys, pathlib, pytest
+import contextlib
+import os
+import subprocess
+import sys
+import pathlib
+import pytest
 
 HERMES_ROOT = pathlib.Path(
     os.environ.get("HERMES_AGENT_ROOT", "/Users/carlos/cortex-workspace/hermes-agent")

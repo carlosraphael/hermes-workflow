@@ -10,8 +10,11 @@ def _git(*a, cwd):
 
 
 def _init_repo(tmp_path):
-    repo = tmp_path / "repo"; repo.mkdir(); _git("init", cwd=repo)
-    (repo / "f").write_text("x"); _git("add", "f", cwd=repo)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git("init", cwd=repo)
+    (repo / "f").write_text("x")
+    _git("add", "f", cwd=repo)
     _git("-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-m", "init", cwd=repo)
     return repo
 

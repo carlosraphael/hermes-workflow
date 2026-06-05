@@ -1,5 +1,6 @@
 # tests/unit/test_examples_validate.py
-import pathlib, pytest
+import pathlib
+import pytest
 from hermes_workflow.engine.template import parse_template, validate_template
 
 EX = pathlib.Path(__file__).parents[2] / "examples"

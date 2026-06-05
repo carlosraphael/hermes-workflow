@@ -1,4 +1,5 @@
-from hermes_workflow.engine.template import parse_template
+import pytest
+from hermes_workflow.engine.template import parse_template, TemplateError
 
 YAML = """
 name: demo
@@ -43,9 +44,6 @@ def test_parser_captures_raw_verify_for_later_rejection():
     assert parse_template(y).stage("approve").verify_raw == {"command": "pytest", "retry": 1}
     assert parse_template(YAML).stage("scan").verify_raw is None
 
-
-import pytest
-from hermes_workflow.engine.template import TemplateError
 
 
 def test_malformed_yaml_raises_template_error():

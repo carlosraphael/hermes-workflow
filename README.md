@@ -38,6 +38,7 @@ from the host).
 
 - **Hermes Agent v0.15.x**
 - **Python ≥ 3.11**
+- **OS:** Linux or macOS (WSL2 on Windows). Native Windows is not supported in 0.x.
 - For any role with `lane: codex`: the `codex` binary on `PATH`, and Hermes'
   **bundled `kanban-codex-lane` skill** present in that role's bound profile.
   This plugin **reuses** that skill — it does **not** re-ship it.
@@ -163,6 +164,8 @@ Lanes are `{profile, codex}` only — `claude-code` is deferred to 0.2.x.
 | [`docs/operations.md`](docs/operations.md) | Upgrade / version-gate procedure and operational caveats. |
 | [`CONTEXT.md`](CONTEXT.md) | The naming taxonomy (distribution / import / plugin / runtime layers). |
 | [`docs/adr/`](docs/adr/) | Architecture decision records. |
+| [`SECURITY.md`](SECURITY.md) | Security policy, supported versions, private GHSA reporting. |
+| [`examples/`](examples/) | Runnable `*.workflow.yaml` templates (the Quickstart on-ramp). |
 
 ## Contributing
 

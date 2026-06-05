@@ -11,6 +11,10 @@ layers are distinct and conflating them causes real packaging/import bugs:
 (CLI `hermes workflow`, slash `/workflow`, toolset `workflow`, tools
 `workflow_start`…`workflow_abandon`).
 
+> **Binding rules live in [`## Key invariants`](#key-invariants) and
+> [`## Definition of Done`](#definition-of-done) — treat them as merge-blocking.
+> Read this whole file before changing engine, hook, veto, or provenance code.**
+
 ## Working principles
 
 - **Think before coding.** State assumptions; surface tradeoffs; if multiple
@@ -96,29 +100,54 @@ cards up to the next dynamic (fan-out) boundary.
 
 ## Key invariants
 
+**These are merge-blocking guarantees.** A PR that weakens any invariant below is
+rejected. If you must change one, change its pinning test in the **same** PR and
+say so in the description.
+
 - **No raw SQLite anywhere.** All DB access goes through `ctx.dispatch_tool`
   (`WorkerBoard`) or host `kb.*` (`HostBoard` / `RunView` db-path). The single
   host connection is opened via `kanban_db.connect_closing` in
-  `tools.py::_host_board` (closes the FD on exit — Hermes #33159). A
-  `test_no_raw_sqlite` meta-test walks the package to keep this true.
+  `tools.py::_host_board` (closes the FD on exit — Hermes #33159).
+  _Pinned by `tests/unit/test_no_raw_sqlite.py`._
+- **Engine purity.** Engine code (`engine/*.py`) imports stdlib + PyYAML +
+  intra-package only — never the board, Hermes, or any other third-party package.
+  This is the load-bearing supply-chain guarantee: the engine's dependency floor
+  stays at PyYAML. _Pinned by `tests/unit/test_engine_purity.py`._
+- **No core modification.** This plugin reaches Hermes ONLY through the generic
+  plugin surface — `ctx.register_tool` / `register_hook` / `register_cli_command`
+  / `register_command` / `register_skill` in `register(ctx)` (`__init__.py`). It
+  never patches `run_agent.py`, `cli.py`, `gateway/run.py`, or
+  `hermes_cli/main.py`. A capability the surface doesn't expose is upstreamed as a
+  new hook / ctx method, not hardcoded into core (Hermes "plugins MUST NOT modify
+  core files", Teknium / PR #5295). _Structural (standalone repo); not separately
+  test-pinned._
 - **Injection-free deterministic gate.** Every `subprocess.run` uses a fixed argv
   list with no shell and no untrusted interpolation (`veto.py` commit-clean is
   `["git","-C",dir,"status","--porcelain"]`; `worktree.py` branch is
   engine-derived; `preflight.py` is `[sys.executable,"-m",…]`).
+  _Not yet test-pinned — add a test if you touch the gate's argv construction._
 - **Veto fails CLOSED.** `evaluate_completion_gate` and the `on_tool_pre` `except`
   both return a block dict on any error; `is_version_compatible` is total and
   returns `False` for anything it cannot positively confirm.
+  _Pinned by `tests/unit/test_veto.py`._
+- **Fan-out fails OPEN.** The `post_tool_call` fan-out driver (`hooks.py::on_tool_done`)
+  is a side-effect that materializes the next layer; its whole body is one
+  try/except that logs and swallows and **never raises** — a raising side-effect
+  hook would wedge the worker that just completed legitimate work.
+  _Pinned by `tests/integration/test_hook_fanout.py`._
 - **Total version gate.** `parse_root_body` raises by design on a malformed root
   (callers wrap it and fail loud); `is_version_compatible` never raises. A
   schema-version mismatch is a *visible refuse*, never a silent mis-drive.
+  _Pinned by `tests/integration/test_spike_version_gate.py`._
 - **Base64-encoded provenance envelope** (`engine/provenance.py`): the sentinel
   and snapshot payloads are base64'd so author content containing `-->` (the
   close marker) cannot truncate serialization. `extract_sentinel` stays
   fail-soft; `parse_root_body` stays raising.
+  _Pinned by `tests/unit/test_provenance.py`._
 - **Sentinel root assignee is non-spawnable.** `_workflow_root` (and the
   `_workflow_gate` gate assignee) lead with `_`, so the dispatcher treats them as
   `skipped_nonspawnable` — the root blackboard and human gates never auto-spawn a
-  worker.
+  worker. _Pinned by `tests/integration/test_spawnability.py`._
 
 Cross-check against `version.py` and `engine/provenance.py`.
 
@@ -138,8 +167,9 @@ Tools follow `TOOL_SPECS → make_tool_handler → register(ctx)`:
 
 Both hooks are registered in `register(ctx)` and **bound to `ctx` via a closure**
 — Hermes' hook invoke calls `cb(**kwargs)` and does **not** pass `ctx`. New
-hooks must wrap their body in a try/except matching the channel's failure mode
-(`post_tool_call` fail-open; `pre_tool_call` fail-closed).
+hooks **MUST** wrap their body in a try/except matching the channel's failure
+mode (`post_tool_call` fail-open; `pre_tool_call` fail-closed); **reviewers
+reject a hook that can raise out of the wrong channel.**
 
 ## Skills
 
@@ -175,6 +205,104 @@ Two tiers, **no LLM in any test**:
 `conftest.py` provides the board harness and the `register_pre_hook` fixture,
 whose teardown removes EXACTLY the callbacks it appended from the process-global
 `pre_tool_call` hook singleton (a leak corrupts every later test in the session).
+
+### Don't write change-detector tests
+
+A test that fails whenever data *expected to change* is updated (a version
+literal, an enumeration count, a catalog snapshot) adds no behavioural coverage —
+it just breaks CI on routine edits. Assert **relationships and invariants**, not
+snapshots.
+
+```
+DON'T:
+  assert PLUGIN_VERSION == "0.1.4"
+  assert len(KNOWN_LANES) == 2
+
+DO:
+  assert SCHEMA_VERSION in SUPPORTED_SCHEMA_VERSIONS
+  assert "codex" in KNOWN_LANES and "claude-code" not in KNOWN_LANES
+```
+
+Reviewers reject new change-detector tests; convert them into invariants first.
+(`test_no_raw_sqlite`, `test_engine_purity`, and `test_supply_chain_pins` are the
+model: they assert a property, not a snapshot.)
+
+### Why plain `pytest` (no hermetic wrapper)
+
+The plugin runs `python3 -m pytest` directly — there is no `scripts/run_tests.sh`.
+Tests use no LLM and no credentials, so the core's hermetic credential-stripping
+wrapper buys nothing here; the one process-global (`pre_tool_call` hooks) is
+isolated by the `register_pre_hook` fixture teardown, and `HERMES_HOME` is
+redirected to `tmp_path` by the `tmp_board` fixture. Per-test process isolation is
+intentionally **not** adopted. Coverage and the integration tier are not gated in
+CI (the latter needs a real Hermes checkout via `HERMES_AGENT_ROOT`).
+
+## Definition of Done
+
+**Before you claim any task complete or open a PR you MUST run through every
+applicable item below and back each with evidence — actual command output, not
+assertion. If an item does not apply, state why. Skipping this checklist is
+itself a governance violation.** This is the authoritative pre-submit gate;
+`CONTRIBUTING.md` "Before opening" and the PR template mirror it.
+
+**1. Tests — run them, don't assume.**
+- [ ] Ran `python3 -m pytest -m 'not integration'` — green (paste the result line).
+- [ ] If the change touches the board / materialize / runview / reconcile /
+  veto-on-board path: ran `python3 -m pytest` with `HERMES_AGENT_ROOT` set — or
+  stated why it couldn't run.
+- [ ] New/changed behaviour has a test; existing coverage not weakened.
+- [ ] No change-detector tests added (assert relationships, not snapshots /
+  counts / version literals).
+
+**2. Invariants — merge-blocking.**
+- [ ] Every invariant in `## Key invariants` still holds (no raw SQLite; engine
+  purity; no core modification; injection-free fail-closed gate; fail-open
+  fan-out; total version gate; base64 provenance; non-spawnable sentinels).
+- [ ] If I changed an invariant, I changed its pinning test in the **same** change
+  and said so.
+
+**3. Governance & conventions.**
+- [ ] Commit(s) are Conventional `type(scope):`; **one logical change**; branch
+  `type/short-slug`.
+- [ ] Any new PyPI dep has a `<next_major` (pre-1.0: `<0.(minor+2)`) ceiling; any
+  new Action is SHA-pinned with a `# vX.Y.Z` comment
+  (`tests/unit/test_supply_chain_pins.py` enforces both).
+- [ ] Engine still imports stdlib + PyYAML + intra-package only; Hermes reached
+  only via `ctx.register_*` — no core file patched.
+
+**4. Docs kept current (whenever applicable).**
+- [ ] Updated every doc the change touches — `README.md`, `AGENTS.md`,
+  `CONTRIBUTING.md`, `docs/operations.md`, `CHANGELOG.md` — or confirmed none apply.
+- [ ] No surviving claim/example contradicts the change (stale "Future work"
+  lists, version refs, the `CONTEXT.md` naming taxonomy).
+
+**5. Scope discipline.**
+- [ ] Every changed line traces to the task; no unrelated refactor/reformat;
+  cleaned only the orphans my own change created.
+
+**6. Cross-platform.**
+- [ ] No Unix-isms introduced — subprocess via argv lists (no `shell=True`),
+  `pathlib`, no `os.kill(pid, 0)` liveness, no hardcoded `/tmp`.
+
+## Cross-platform
+
+**Posture: POSIX only — Linux, macOS, and WSL2 on Windows. Native Windows is out
+of scope for the 0.x line.** The engine is pure stdlib + PyYAML; the only OS
+surface is git subprocess calls and a per-profile subprocess spawn, both assuming
+a POSIX shell/path environment. The code stays cross-platform-clean by
+construction — preserve these when editing:
+
+- **No PID/signal liveness probes.** Idempotency is filesystem- and board-state
+  derived (`worktree.py` checks `(<path>/.git).exists()`), never `os.kill(pid, 0)`.
+- **Subprocess via argv lists, never a shell.** `subprocess.run(["git", "-C", …])`;
+  convert paths with `str(path)` only at the subprocess boundary.
+- **`pathlib` for all paths**; worktrees live under
+  `<repo>/../.hermes-workflow-worktrees/` (not a temp dir); no hardcoded `/tmp`.
+- **`git` is a hard prerequisite** (assumed on `PATH`); **`codex` is optional and
+  `shutil.which`-gated** in pre-flight — the asymmetry is intentional.
+- **Self-invocation via `[sys.executable, "-m", …]`**, never a shebang.
+- **No `psutil`** — the plugin owns no process lifecycle, so cross-platform
+  process remedies are intentionally N/A and the dependency floor stays at PyYAML.
 
 ## Known pitfalls
 

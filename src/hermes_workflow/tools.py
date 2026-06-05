@@ -166,7 +166,7 @@ def _root_snapshot(ctx, board, root_id):
     try:
         return parse_root_body(body)
     except Exception as e:
-        raise WorkflowError(f"{root_id} is not a workflow root blackboard: {e}")
+        raise WorkflowError(f"{root_id} is not a workflow root blackboard: {e}") from e
 
 
 def workflow_validate(ctx, *, template_text):
@@ -419,7 +419,8 @@ def workflow_abandon(ctx, *, root_id, board=None, kb=None, conn=None):
 
     run_cards = list(rv.by_identity.values())
     card_set = set(run_cards) | {root_id}
-    children_of = lambda cid: [c for c in (wb.show(cid).get("children") or []) if c in card_set]
+    def children_of(cid):
+        return [c for c in (wb.show(cid).get("children") or []) if c in card_set]
 
     failures = []
     with _host_board(board, kb, conn) as hb:
@@ -482,7 +483,7 @@ def _dedup_duplicates(ctx, board, root_id, wb, kb, conn):
         return []
     archived = []
     with _host_board(board, kb, conn) as hb:
-        for ident, cards in dups.items():
+        for _ident, cards in dups.items():
             live = [c for c in cards if c.get("status") != "archived"]
             winner = pick_winner([_card_row(c) for c in live])
             for c in live:
@@ -613,16 +614,31 @@ def make_tool_handler(ctx, fn):
 def cli_setup(parser):
     """Add `hermes workflow <subcommand>` sub-subparsers (also reused by the slash parser)."""
     sub = parser.add_subparsers(dest="wf_cmd", required=True)
-    p = sub.add_parser("start");     p.add_argument("--template", required=True); p.add_argument("--params", default="{}"); p.add_argument("--bindings", required=True); p.add_argument("--board")
-    p = sub.add_parser("status");    p.add_argument("root_id"); p.add_argument("--board")
-    p = sub.add_parser("validate");  p.add_argument("--template", required=True)
-    p = sub.add_parser("reconcile"); p.add_argument("root_id"); p.add_argument("--board")
-    p = sub.add_parser("approve");   p.add_argument("gate_card"); p.add_argument("--board")
-    p = sub.add_parser("abandon");   p.add_argument("root_id"); p.add_argument("--board")
+    p = sub.add_parser("start")
+    p.add_argument("--template", required=True)
+    p.add_argument("--params", default="{}")
+    p.add_argument("--bindings", required=True)
+    p.add_argument("--board")
+    p = sub.add_parser("status")
+    p.add_argument("root_id")
+    p.add_argument("--board")
+    p = sub.add_parser("validate")
+    p.add_argument("--template", required=True)
+    p = sub.add_parser("reconcile")
+    p.add_argument("root_id")
+    p.add_argument("--board")
+    p = sub.add_parser("approve")
+    p.add_argument("gate_card")
+    p.add_argument("--board")
+    p = sub.add_parser("abandon")
+    p.add_argument("root_id")
+    p.add_argument("--board")
 
 
 def _read_template(path):
-    return pathlib.Path(path).read_text()
+    # utf-8-sig transparently strips a BOM (Windows/WSL2 GUI editors) and reads
+    # plain UTF-8 unchanged. Templates are the only on-disk read (CLI path).
+    return pathlib.Path(path).read_text(encoding="utf-8-sig")
 
 
 def _dispatch_ns(ctx, ns):

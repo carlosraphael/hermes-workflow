@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=61,<81"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -17,7 +17,8 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
-  "Operating System :: OS Independent",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
 ]
 
 [project.urls]
@@ -28,7 +29,18 @@ Repository = "https://github.com/carlosraphael/hermes-workflow"
 hermes-workflow = "hermes_workflow"
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<9"]
+dev = ["pytest>=9,<10", "ruff>=0.15,<0.17"]
+
+[tool.ruff]
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Catch real issues (errors, pyflakes, pyupgrade, bugbear). Import sorting (I)
+# and the opinionated formatter are intentionally NOT enforced — they would
+# reformat deliberate house style across the whole tree (surgical-changes rule).
+select = ["E", "F", "B", "UP"]
+ignore = ["E501"]   # no strict line-length enforcement (PEP 8, practical exceptions)
 
 [tool.setuptools.packages.find]
 where = ["src"]
