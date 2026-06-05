@@ -106,12 +106,27 @@ this in CI.
 
 - **Branch naming:** `type/short-slug` — `fix/…`, `feat/…`, `test/…`, `docs/…`,
   `refactor/…`, `chore/…`.
-- **Commits:** [Conventional Commits](https://www.conventionalcommits.org/) —
-  `feat`, `fix`, `test`, `docs`, `chore`, `refactor`, `perf`.
-- **Before opening:** all tests green and the invariants in
-  [AGENTS.md#key-invariants](AGENTS.md#key-invariants) intact — no raw SQLite,
-  engine stays pure (stdlib + PyYAML + intra-package only), the gate stays
-  injection-free and fail-closed, the fan-out hook stays fail-open.
+- **Commits:** [Conventional Commits](https://www.conventionalcommits.org/) in
+  the form `<type>(<scope>): <description>`. Types: `feat`, `fix`, `test`,
+  `docs`, `refactor`, `perf`, `chore` (build / CI / packaging / deps all fold
+  into `chore`). Scope is the subsystem touched — one of `engine`, `hooks`,
+  `veto`, `tools`, `materialize`, `board`, `runview`, `preflight`, `sweep`,
+  `worktree`, `lanes`, `skills`; the `engine/` submodules `provenance`,
+  `template`, `interpolate`, `graph`, `reconcile`, `model`; or cross-cutting
+  `ci`, `docs`, `release`. Scope is optional for genuinely repo-wide changes.
+  Examples:
+  ```
+  fix(veto): return block dict instead of raising on git error
+  feat(engine): cap expand fan-out at the compiled max
+  test(provenance): pin base64 envelope against a body containing -->
+  chore(release): bump to v0.1.5
+  ```
+- **Before opening:** complete the
+  [AGENTS.md `## Definition of Done`](AGENTS.md#definition-of-done) checklist —
+  the authoritative pre-submit gate (all tests green; every
+  [key invariant](AGENTS.md#key-invariants) intact: no raw SQLite, engine purity,
+  no core modification, injection-free fail-closed gate, fail-open fan-out). This
+  list and the PR template mirror that checklist; keep them in lockstep.
 - **One logical change per PR.** Don't mix a fix with a refactor with a feature.
 - **Release tags** are clean `vMAJOR.MINOR.PATCH` (e.g. `v0.1.1`).
 
