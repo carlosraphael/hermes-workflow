@@ -75,6 +75,9 @@ def test_reconcile_recreates_and_dedups(fake_ctx, tmp_board, partial_fanout):
     assert len(result["deduped"]) == 1
     assert wb.show(pf.winner)["status"] == "done"
 
+    # best-effort collapse contract: a clean pass reports no per-op failures
+    assert result["failures"] == []
+
     # the missing instance was recreated as a live (non-archived) card
     fix1 = rv.card_id_for(("fix", 1, 0))
     assert fix1 and rv.status[fix1] != "archived"

@@ -10,6 +10,26 @@ Versions refer to the **distribution** `hermes-workflow`; the run-snapshot
 
 ## [Unreleased]
 
+### Changed
+
+- **`engine/reconcile.py` deepened from a tiebreak into a duplicate-collapse
+  planner.** A new pure `plan_collapse(template, nodes) -> CollapsePlan` decides
+  the winner, the join re-link edges, the running-loser reclaims, and the
+  archives over board-free `CardNode`s; `workflow_reconcile`'s executor only
+  applies the returned plan. The collapse decision — winner selection, the
+  idempotent relink-skip, and template-derived join detection (now sharing
+  `_relink_created_to_joins`'s rule) — is unit-tested without a board.
+
+### Fixed
+
+- **`workflow_reconcile` no longer orphans a running duplicate's worker** — a
+  running loser is reclaimed before its card is archived (matching
+  `workflow_abandon`).
+- **A board error mid-collapse no longer discards the pass** — `workflow_reconcile`
+  returns a best-effort `failures` list (per-op isolation) and keeps its
+  `created` / `relinked` / `deduped` progress instead of aborting on the first
+  error.
+
 ## [0.1.4] - 2026-06-05
 
 Examples + documentation release. No plugin runtime behaviour changed.

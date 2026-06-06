@@ -106,15 +106,18 @@ hermes workflow approve <gate_card>     # -> {"approved": <gate_card>}
 ### 4. Stalled / partial run — `workflow_reconcile`
 
 After a crash or a mid-fan-out hook failure, re-run the engine graph from durable
-inputs — create-missing (re-linked to the join), progress-aware dedup, and
-diagnosis:
+inputs — create-missing (re-linked to the join), progress-aware dedup (a running
+duplicate is reclaimed before it is archived), and diagnosis. The collapse is
+best-effort: a per-op board error lands in `failures` rather than aborting the
+pass:
 
 ```json
 {
   "root_id": <id>,
   "created":   [...],
   "relinked":  [...],
-  "deduped":   <n>,
+  "deduped":   [...],
+  "failures":  [...],
   "diagnosis": {"review_required": [...]}
 }
 ```
