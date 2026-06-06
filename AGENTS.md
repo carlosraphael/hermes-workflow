@@ -66,7 +66,7 @@ src/hermes_workflow/
 │   ├── interpolate.py # ${params.*} / ${<expand-var>.*} substitution; raises on unknown refs
 │   ├── graph.py       # cards_for_run: which CardSpecs should exist up to the next dynamic boundary
 │   ├── provenance.py  # base64 sentinel/snapshot envelope embed/extract + version compat
-│   └── reconcile.py   # pick_winner: deterministic duplicate-collapse tiebreak
+│   └── reconcile.py   # plan_collapse: pure duplicate-collapse planner (pick_winner + relink/reclaim/archive)
 ├── lanes/presets.py   # lane contract: which bundled skill a lane requests ({profile, codex})
 └── skills/            # bundled workflow-author / workflow-orchestrator skills (auto-registered)
 ```

@@ -22,7 +22,7 @@ import subprocess
 
 from hermes_workflow.board import BoardError, HostBoard, WorkerBoard
 from hermes_workflow.engine.provenance import build_root_body, extract_sentinel
-from hermes_workflow.engine.reconcile import CardRow, pick_winner
+from hermes_workflow.engine.reconcile import CardNode, plan_collapse
 from hermes_workflow.engine.template import (
     TemplateError,
     parse_template,
@@ -318,14 +318,21 @@ def workflow_reconcile(ctx, *, root_id, board=None, kb=None, conn=None):
             review_required.append({"stage": ident.stage_id, "card": cid,
                                     "remediation": f"hermes kanban unblock {cid}"})
 
-    # Progress-aware dedup: collapse duplicate cards sharing one sentinel identity.
-    deduped = _dedup_duplicates(ctx, board, root_id, wb, kb, conn)
+    # Progress-aware collapse: retire duplicate cards sharing one sentinel identity.
+    # Guarded so an enumeration error can't discard the create/relink progress above
+    # (best-effort: per-op failures travel back in `failures`, the call never raises).
+    deduped, dedup_failures = [], []
+    try:
+        deduped, dedup_failures = _collapse_duplicates(ctx, board, root_id, wb, t, kb, conn)
+    except (BoardError, WorkflowError) as e:
+        dedup_failures = [{"card": root_id, "op": "collapse", "error": str(e)}]
 
     return {
         "root_id": root_id,
         "created": [str(c) for c in created.values()],
         "relinked": [list(p) for p in relinked],
         "deduped": deduped,
+        "failures": dedup_failures,
         "diagnosis": {"review_required": review_required},
     }
 
@@ -443,12 +450,15 @@ def workflow_abandon(ctx, *, root_id, board=None, kb=None, conn=None):
     return {"abandoned": root_id, "orphaned_branches": orphaned, "failures": failures}
 
 
-def _enumerate_by_identity(ctx, board, root_id):
-    """Link-walk the run and return {Identity: [card_dict, ...]} keeping ALL cards
-    per identity (RunView collapses duplicates; dedup needs to see them all)."""
-    from hermes_workflow.engine.graph import Identity
+def _enumerate_cards(ctx, board, root_id):
+    """Link-walk the run from the root, returning every sentinel-stamped card dict.
+
+    Keeps ALL cards (including archived ones): the collapse planner must see the
+    full duplicate set per identity and each loser's join children to decide what
+    to re-point. The root (no sentinel) is walked for its children but excluded.
+    """
     wb = WorkerBoard(ctx, board=board)
-    groups, seen, stack = {}, set(), [root_id]
+    cards, seen, stack = [], set(), [root_id]
     while stack:
         cid = stack.pop()
         if cid in seen:
@@ -456,45 +466,75 @@ def _enumerate_by_identity(ctx, board, root_id):
         seen.add(cid)
         card = wb.show(cid)
         stack.extend(card.get("children") or [])
-        sentinel = extract_sentinel(card.get("body") or "")
-        if sentinel is None:
+        if extract_sentinel(card.get("body") or "") is None:
             continue
-        ident = Identity(sentinel.stage_id, sentinel.fan_index, sentinel.attempt)
-        groups.setdefault(ident, []).append(card)
-    return groups
+        cards.append(card)
+    return cards
 
 
-def _card_row(card):
+def _card_node(card):
+    """Project a flat board card dict into the engine's CardNode value object."""
+    from hermes_workflow.engine.graph import Identity
+    s = extract_sentinel(card.get("body") or "")
     runs = card.get("runs") or []
     latest = max((r.get("id", 0) for r in runs), default=None)
-    return CardRow(card_id=card["id"], status=card.get("status"),
-                   latest_run_id=latest, created_at=card.get("created_at") or 0.0)
+    return CardNode(
+        card_id=card["id"],
+        identity=Identity(s.stage_id, s.fan_index, s.attempt),
+        status=card.get("status"),
+        latest_run_id=latest,
+        created_at=card.get("created_at") or 0.0,
+        parents=tuple(card.get("parents") or []),
+        children=tuple(card.get("children") or []),
+    )
 
 
-def _dedup_duplicates(ctx, board, root_id, wb, kb, conn):
-    """For each identity with >1 LIVE card: pick the winner, re-wire the winner to
-    each loser's joins (kanban_link; absence-checked), then archive the loser
-    (host kb.* — an archived loser is a satisfied parent so its dangling edge is
-    harmless). Returns the archived loser ids."""
-    groups = _enumerate_by_identity(ctx, board, root_id)
-    dups = {i: cards for i, cards in groups.items()
-            if len([c for c in cards if c.get("status") != "archived"]) > 1}
-    if not dups:
-        return []
+def _collapse_duplicates(ctx, board, root_id, wb, t, kb, conn):
+    """Plan duplicate-collapse purely (``plan_collapse``), then apply the plan.
+
+    The engine decides winner / relink edges / reclaim / archive over board-free
+    CardNodes; this executor only applies them. Relink runs FIRST so each join
+    keeps a live winner-parent before any archive triggers a ready-sweep; if ANY
+    relink fails the retire phase is DEFERRED (losers stay live, next reconcile
+    retries) so a join is never archived off its loser onto a missing winner-edge.
+    Otherwise running losers are reclaimed before archival (a detached worker
+    outlives its card). Every op is failure-isolated into ``failures`` (best-effort,
+    like abandon). Returns ``(archived_ids, failures)``.
+    """
+    nodes = [_card_node(c) for c in _enumerate_cards(ctx, board, root_id)]
+    plan = plan_collapse(t, nodes)
+    if not plan.archive:
+        return [], []
+
+    failures = []
+    for winner_id, join_id in plan.relink:
+        try:
+            wb.link(winner_id, join_id)   # link(parent=winner, child=join)
+        except BoardError as e:           # best-effort: isolate per-edge failure
+            failures.append({"card": join_id, "op": "relink", "error": str(e)})
+
+    # A failed relink means a winner is NOT yet parenting some join. Archiving any
+    # loser now would let archive's ready-sweep (kanban recompute_ready) promote that
+    # join off its archived (== satisfied) loser-parent with no live producer. Defer
+    # the WHOLE retire phase: losers stay live, so the next reconcile re-plans the
+    # collapse cleanly (idempotent). Dedup is best-effort — one rare deferral is safe.
+    if failures:
+        return [], failures
+
     archived = []
     with _host_board(board, kb, conn) as hb:
-        for _ident, cards in dups.items():
-            live = [c for c in cards if c.get("status") != "archived"]
-            winner = pick_winner([_card_row(c) for c in live])
-            for c in live:
-                if c["id"] == winner.card_id:
-                    continue
-                for join_cid in (c.get("children") or []):
-                    if winner.card_id not in set(wb.show(join_cid).get("parents") or []):
-                        wb.link(winner.card_id, join_cid)   # link(parent=winner, child=join)
-                hb.archive(c["id"])
-                archived.append(c["id"])
-    return archived
+        for loser_id in plan.reclaim:     # reclaim running losers before archiving
+            try:
+                hb.reclaim(loser_id)
+            except Exception as e:
+                failures.append({"card": loser_id, "op": "reclaim", "error": str(e)})
+        for loser_id in plan.archive:
+            try:
+                hb.archive(loser_id)
+                archived.append(loser_id)
+            except Exception as e:
+                failures.append({"card": loser_id, "op": "archive", "error": str(e)})
+    return archived, failures
 
 
 # ---------------------------------------------------------------------------
