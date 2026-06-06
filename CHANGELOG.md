@@ -29,6 +29,12 @@ Versions refer to the **distribution** `hermes-workflow`; the run-snapshot
   returns a best-effort `failures` list (per-op isolation) and keeps its
   `created` / `relinked` / `deduped` progress instead of aborting on the first
   error.
+- **A failed winner→join relink no longer prematurely promotes a join** — if any
+  relink fails, the collapse now defers its whole retire phase (losers stay live)
+  rather than archiving a loser whose join never gained the winner edge. An
+  archived parent counts as *satisfied* by the board's ready-sweep, so archiving
+  off a missing winner-edge would promote the join with no live producer; the
+  deferral leaves the duplicate for the next, self-healing reconcile.
 
 ## [0.1.4] - 2026-06-05
 

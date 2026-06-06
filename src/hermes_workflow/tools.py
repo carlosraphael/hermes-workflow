@@ -494,10 +494,12 @@ def _collapse_duplicates(ctx, board, root_id, wb, t, kb, conn):
 
     The engine decides winner / relink edges / reclaim / archive over board-free
     CardNodes; this executor only applies them. Relink runs FIRST so each join
-    keeps a live winner-parent before any archive triggers a ready-sweep; running
-    losers are reclaimed before archival (a detached worker outlives its card).
-    Every op is failure-isolated into ``failures`` (best-effort, like abandon).
-    Returns ``(archived_ids, failures)``.
+    keeps a live winner-parent before any archive triggers a ready-sweep; if ANY
+    relink fails the retire phase is DEFERRED (losers stay live, next reconcile
+    retries) so a join is never archived off its loser onto a missing winner-edge.
+    Otherwise running losers are reclaimed before archival (a detached worker
+    outlives its card). Every op is failure-isolated into ``failures`` (best-effort,
+    like abandon). Returns ``(archived_ids, failures)``.
     """
     nodes = [_card_node(c) for c in _enumerate_cards(ctx, board, root_id)]
     plan = plan_collapse(t, nodes)
@@ -510,6 +512,14 @@ def _collapse_duplicates(ctx, board, root_id, wb, t, kb, conn):
             wb.link(winner_id, join_id)   # link(parent=winner, child=join)
         except BoardError as e:           # best-effort: isolate per-edge failure
             failures.append({"card": join_id, "op": "relink", "error": str(e)})
+
+    # A failed relink means a winner is NOT yet parenting some join. Archiving any
+    # loser now would let archive's ready-sweep (kanban recompute_ready) promote that
+    # join off its archived (== satisfied) loser-parent with no live producer. Defer
+    # the WHOLE retire phase: losers stay live, so the next reconcile re-plans the
+    # collapse cleanly (idempotent). Dedup is best-effort — one rare deferral is safe.
+    if failures:
+        return [], failures
 
     archived = []
     with _host_board(board, kb, conn) as hb:

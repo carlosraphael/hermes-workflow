@@ -64,7 +64,9 @@ class CollapsePlan:
     ``reclaim`` lists running losers whose worker must be reclaimed BEFORE the
     card is archived; ``archive`` lists every loser to retire. The executor
     applies relink first (a join must keep a live parent before archive's
-    ready-sweep runs), then reclaim, then archive.
+    ready-sweep runs), then reclaim, then archive — but if any relink fails it
+    DEFERS the whole reclaim+archive phase (losers stay live for a self-healing
+    retry) rather than archive a join's loser onto a missing winner-edge.
     """
     relink: tuple = ()      # tuple[tuple[str, str]]  (winner_id, join_id)
     archive: tuple = ()     # tuple[str]              loser ids
