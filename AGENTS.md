@@ -153,17 +153,26 @@ Cross-check against `version.py` and `engine/provenance.py`.
 
 ## Adding a tool or hook
 
-Tools follow `TOOL_SPECS → make_tool_handler → register(ctx)`:
+Tools follow `COMMANDS → make_tool_handler → register(ctx)`. The `COMMANDS`
+descriptor tuple (`tools.py`) is the **single source of truth**: one frozen
+`Command(name, fn, schema, bind, positional, cli_args)` per tool drives tool
+registration, the `hermes workflow <cmd>` subparser, and `/workflow` dispatch.
+Adding a tool is one descriptor — never a separate edit to the argparse setup or
+the dispatch routing (both loop `COMMANDS`).
 
 1. Write `workflow_<verb>(ctx, *, …)` in `tools.py` returning a plain dict
    (`{"error": …}` on failure — the **flat-error contract**). Mutating tools call
    `_require_orchestrator(...)` to self-refuse inside a dispatcher-spawned worker
    (`HERMES_KANBAN_TASK` set).
-2. Add a schema dict and an entry to the `TOOL_SPECS` list.
-3. `register(ctx)` (`__init__.py`) loops `TOOL_SPECS`, registering each under
-   toolset `workflow` with `make_tool_handler(ctx, fn)` — which unpacks args into
-   `fn(ctx, **args)`, JSON-serializes the dict, and converts any exception into a
-   `{"error": …}` envelope so the handler never raises.
+2. Add a schema dict and one `Command(...)` entry to `COMMANDS`. Its `positional`
+   + `cli_args` describe the CLI subparser; its `bind` maps the parsed argparse
+   namespace to the tool's keyword args (the one place `--template` is read off
+   disk and `--params`/`--bindings` JSON is decoded). The CLI/slash subcommand is
+   the tool name minus the `workflow_` prefix (`workflow_start` → `start`).
+3. `register(ctx)` (`__init__.py`) loops `COMMANDS`, registering each under
+   toolset `workflow` with `make_tool_handler(ctx, cmd.fn)` — which unpacks args
+   into `fn(ctx, **args)`, JSON-serializes the dict, and converts any exception
+   into a `{"error": …}` envelope so the handler never raises.
 
 Both hooks are registered in `register(ctx)` and **bound to `ctx` via a closure**
 — Hermes' hook invoke calls `cb(**kwargs)` and does **not** pass `ctx`. New

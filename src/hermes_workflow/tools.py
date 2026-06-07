@@ -19,6 +19,8 @@ import os
 import pathlib
 import shlex
 import subprocess
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from hermes_workflow.board import BoardError, HostBoard, WorkerBoard
 from hermes_workflow.engine.provenance import build_root_body, extract_sentinel
@@ -626,14 +628,71 @@ WORKFLOW_ABANDON_SCHEMA = {
     },
 }
 
-TOOL_SPECS = [
-    ("workflow_start", workflow_start, WORKFLOW_START_SCHEMA),
-    ("workflow_status", workflow_status, WORKFLOW_STATUS_SCHEMA),
-    ("workflow_validate", workflow_validate, WORKFLOW_VALIDATE_SCHEMA),
-    ("workflow_reconcile", workflow_reconcile, WORKFLOW_RECONCILE_SCHEMA),
-    ("workflow_approve", workflow_approve, WORKFLOW_APPROVE_SCHEMA),
-    ("workflow_abandon", workflow_abandon, WORKFLOW_ABANDON_SCHEMA),
-]
+@dataclass(frozen=True)
+class Command:
+    """One workflow command — the single source for every surface it appears on.
+
+    A descriptor drives tool registration (``name``/``schema``/``fn``), the
+    ``hermes workflow <cmd>`` subparser (``positional`` + ``cli_args``), and
+    CLI/slash dispatch (``bind`` maps a parsed argparse namespace to ``fn``'s
+    keyword args — the one place ``--template`` is read off disk and
+    ``--params``/``--bindings`` JSON is decoded). Add a tool by adding ONE entry
+    to ``COMMANDS``; nothing else enumerates the command set.
+
+    ``name`` is the tool name (``workflow_start``); the runtime CLI/slash
+    subcommand is the same name without the ``workflow_`` prefix (``start``,
+    per the CONTEXT.md naming taxonomy).
+    """
+    name: str
+    fn: Callable
+    schema: dict
+    bind: Callable                 # (argparse.Namespace) -> kwargs dict for fn
+    positional: tuple = ()         # positional argparse arg names, e.g. ("root_id",)
+    cli_args: tuple = ()           # ((flag, argparse_kwargs), ...) optional flags
+
+    @property
+    def cli_name(self) -> str:
+        return self.name.removeprefix("workflow_")
+
+
+COMMANDS = (
+    Command(
+        "workflow_start", workflow_start, WORKFLOW_START_SCHEMA,
+        bind=lambda ns: {
+            "template_text": _read_template(ns.template),
+            "params": json.loads(ns.params),
+            "bindings": json.loads(ns.bindings),
+            "board": ns.board,
+        },
+        cli_args=(("--template", {"required": True}), ("--params", {"default": "{}"}),
+                  ("--bindings", {"required": True}), ("--board", {})),
+    ),
+    Command(
+        "workflow_status", workflow_status, WORKFLOW_STATUS_SCHEMA,
+        bind=lambda ns: {"root_id": ns.root_id, "board": ns.board},
+        positional=("root_id",), cli_args=(("--board", {}),),
+    ),
+    Command(
+        "workflow_validate", workflow_validate, WORKFLOW_VALIDATE_SCHEMA,
+        bind=lambda ns: {"template_text": _read_template(ns.template)},
+        cli_args=(("--template", {"required": True}),),
+    ),
+    Command(
+        "workflow_reconcile", workflow_reconcile, WORKFLOW_RECONCILE_SCHEMA,
+        bind=lambda ns: {"root_id": ns.root_id, "board": ns.board},
+        positional=("root_id",), cli_args=(("--board", {}),),
+    ),
+    Command(
+        "workflow_approve", workflow_approve, WORKFLOW_APPROVE_SCHEMA,
+        bind=lambda ns: {"gate_card": ns.gate_card, "board": ns.board},
+        positional=("gate_card",), cli_args=(("--board", {}),),
+    ),
+    Command(
+        "workflow_abandon", workflow_abandon, WORKFLOW_ABANDON_SCHEMA,
+        bind=lambda ns: {"root_id": ns.root_id, "board": ns.board},
+        positional=("root_id",), cli_args=(("--board", {}),),
+    ),
+)
 
 
 def make_tool_handler(ctx, fn):
@@ -652,27 +711,18 @@ def make_tool_handler(ctx, fn):
 
 
 def cli_setup(parser):
-    """Add `hermes workflow <subcommand>` sub-subparsers (also reused by the slash parser)."""
+    """Add `hermes workflow <subcommand>` sub-subparsers (also reused by the slash parser).
+
+    Every subparser is built from a ``COMMANDS`` descriptor — there is no second,
+    hand-maintained argparse command list, so adding a tool needs only a descriptor.
+    """
     sub = parser.add_subparsers(dest="wf_cmd", required=True)
-    p = sub.add_parser("start")
-    p.add_argument("--template", required=True)
-    p.add_argument("--params", default="{}")
-    p.add_argument("--bindings", required=True)
-    p.add_argument("--board")
-    p = sub.add_parser("status")
-    p.add_argument("root_id")
-    p.add_argument("--board")
-    p = sub.add_parser("validate")
-    p.add_argument("--template", required=True)
-    p = sub.add_parser("reconcile")
-    p.add_argument("root_id")
-    p.add_argument("--board")
-    p = sub.add_parser("approve")
-    p.add_argument("gate_card")
-    p.add_argument("--board")
-    p = sub.add_parser("abandon")
-    p.add_argument("root_id")
-    p.add_argument("--board")
+    for cmd in COMMANDS:
+        p = sub.add_parser(cmd.cli_name)
+        for name in cmd.positional:
+            p.add_argument(name)
+        for flag, kwargs in cmd.cli_args:
+            p.add_argument(flag, **kwargs)
 
 
 def _read_template(path):
@@ -681,23 +731,24 @@ def _read_template(path):
     return pathlib.Path(path).read_text(encoding="utf-8-sig")
 
 
+_COMMANDS_BY_CLI = {cmd.cli_name: cmd for cmd in COMMANDS}
+
+
+def command_names_hint() -> str:
+    """`<start|status|...>` usage hint derived from COMMANDS (no second list)."""
+    return "<" + "|".join(cmd.cli_name for cmd in COMMANDS) + ">"
+
+
 def _dispatch_ns(ctx, ns):
-    """Run a parsed `workflow ...` namespace; returns the tool's dict result."""
-    cmd = getattr(ns, "wf_cmd", None)
-    if cmd == "start":
-        return workflow_start(ctx, template_text=_read_template(ns.template),
-                              params=json.loads(ns.params), bindings=json.loads(ns.bindings), board=ns.board)
-    if cmd == "status":
-        return workflow_status(ctx, root_id=ns.root_id, board=ns.board)
-    if cmd == "validate":
-        return workflow_validate(ctx, template_text=_read_template(ns.template))
-    if cmd == "reconcile":
-        return workflow_reconcile(ctx, root_id=ns.root_id, board=ns.board)
-    if cmd == "approve":
-        return workflow_approve(ctx, gate_card=ns.gate_card, board=ns.board)
-    if cmd == "abandon":
-        return workflow_abandon(ctx, root_id=ns.root_id, board=ns.board)
-    return {"error": f"unknown workflow subcommand: {cmd!r}"}
+    """Run a parsed `workflow ...` namespace; returns the tool's dict result.
+
+    Table lookup over ``COMMANDS`` (replacing the old per-command if/elif chain):
+    the descriptor's ``bind`` maps the namespace to the tool's keyword args.
+    """
+    cmd = _COMMANDS_BY_CLI.get(getattr(ns, "wf_cmd", None))
+    if cmd is None:
+        return {"error": f"unknown workflow subcommand: {getattr(ns, 'wf_cmd', None)!r}"}
+    return cmd.fn(ctx, **cmd.bind(ns))
 
 
 def cli_dispatch(ctx, args):
@@ -717,7 +768,7 @@ def slash_dispatch(ctx, raw_args):
     try:
         ns = parser.parse_args(shlex.split(raw_args or ""))
     except SystemExit:
-        return "usage: /workflow <start|status|validate|reconcile|approve|abandon> [args]"
+        return f"usage: /workflow {command_names_hint()} [args]"
     # The interactive slash surface honors the plugin's flat {"error": ...} contract:
     # a missing --template path or malformed --params/--bindings JSON becomes a clean
     # error rather than a raw exception bubbling into the session.

@@ -12,6 +12,15 @@ Versions refer to the **distribution** `hermes-workflow`; the run-snapshot
 
 ### Changed
 
+- **The workflow command set is now defined once.** A single frozen `COMMANDS`
+  descriptor tuple in `tools.py` (one `Command` per tool: `name`, `fn`, `schema`,
+  `bind`, `positional`, `cli_args`) replaces the four parallel structures
+  (`TOOL_SPECS`, the per-command `cli_setup` subparsers, the `_dispatch_ns`
+  if/elif chain, and the duplicated `<start|status|…>` usage hint). Tool
+  registration, the `hermes workflow <cmd>` CLI, and `/workflow` dispatch are all
+  derived from it, so adding a tool touches exactly one descriptor. Pure
+  structural refactor — no change to any tool's inputs, outputs, error strings,
+  or the flat-error contract.
 - **`engine/reconcile.py` deepened from a tiebreak into a duplicate-collapse
   planner.** A new pure `plan_collapse(template, nodes) -> CollapsePlan` decides
   the winner, the join re-link edges, the running-loser reclaims, and the

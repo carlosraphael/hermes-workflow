@@ -87,6 +87,22 @@ def test_register_wires_tools_hooks_cli(recording_ctx):
     assert "workflow" in recording_ctx.slash
 
 
+def test_registration_and_cli_derived_from_single_command_source(recording_ctx):
+    # Issue #15: the registered tool set AND the CLI subparser set are both
+    # derived from the single COMMANDS source — no hand-maintained second list.
+    # `==` (not `<=`) asserts there is no extra surface beyond COMMANDS.
+    import hermes_workflow
+
+    hermes_workflow.register(recording_ctx)
+
+    assert recording_ctx.tools == {cmd.name for cmd in tools.COMMANDS}
+
+    parser = argparse.ArgumentParser(prog="workflow", add_help=False)
+    tools.cli_setup(parser)
+    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    assert set(sub.choices) == {cmd.cli_name for cmd in tools.COMMANDS}
+
+
 def test_register_discovers_bundled_skills(recording_ctx):
     import hermes_workflow
 

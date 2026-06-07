@@ -13,9 +13,9 @@ def register(ctx):
     a worker). Both hooks are bound to ``ctx`` via a closure because Hermes' hook
     invoke does NOT pass ctx (post_tool_call fan-out + pre_tool_call completion gate).
     """
-    for name, fn, schema in tools.TOOL_SPECS:
-        ctx.register_tool(name=name, toolset="workflow", schema=schema,
-                          handler=tools.make_tool_handler(ctx, fn))
+    for cmd in tools.COMMANDS:
+        ctx.register_tool(name=cmd.name, toolset="workflow", schema=cmd.schema,
+                          handler=tools.make_tool_handler(ctx, cmd.fn))
 
     ctx.register_hook("post_tool_call", lambda **kw: hooks.on_tool_done(ctx=ctx, **kw))
     ctx.register_hook("pre_tool_call", lambda **kw: hooks.on_tool_pre(ctx=ctx, **kw))
@@ -25,7 +25,7 @@ def register(ctx):
                              handler_fn=lambda args: tools.cli_dispatch(ctx, args))
     ctx.register_command("workflow", lambda raw: tools.slash_dispatch(ctx, raw),
                          description="Manage hermes-workflow runs",
-                         args_hint="<start|status|validate|reconcile|approve|abandon>")
+                         args_hint=tools.command_names_hint())
 
     # Bundled skills are shipped in Phase 4; guard the (currently absent) dir so
     # register stays crash-free until then.
