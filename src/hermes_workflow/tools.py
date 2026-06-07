@@ -1,6 +1,11 @@
 # src/hermes_workflow/tools.py
 """Orchestrator-facing workflow tools.
 
+The six ``workflow_*`` tool functions plus their small private helpers. The rest
+of the surface lives in sibling modules: schemas (:mod:`hermes_workflow.schemas`),
+the ``COMMANDS`` table + CLI/slash dispatch (:mod:`hermes_workflow.cli`), and the
+collapse-planner board glue (:mod:`hermes_workflow.reconcile_exec`).
+
 ``workflow_start`` validates a template + its bindings, runs a per-profile
 pre-flight loadability probe, and — only once every profile is confirmed
 loadable — seeds the run: it writes the root blackboard (a completed card
@@ -12,19 +17,11 @@ can't load the plugin (or a codex lane is missing its binary/skill), we return
 a remediation map and create NOTHING. Cards are only ever created after the
 probe is fully green.
 """
-import argparse
-import contextlib
-import json
 import os
-import pathlib
-import shlex
 import subprocess
-from collections.abc import Callable
-from dataclasses import dataclass
 
-from hermes_workflow.board import BoardError, HostBoard, WorkerBoard
-from hermes_workflow.engine.provenance import build_root_body, extract_sentinel
-from hermes_workflow.engine.reconcile import CardNode, plan_collapse
+from hermes_workflow.board import BoardError, WorkerBoard
+from hermes_workflow.engine.provenance import build_root_body
 from hermes_workflow.engine.template import (
     TemplateError,
     parse_template,
@@ -32,12 +29,18 @@ from hermes_workflow.engine.template import (
 )
 from hermes_workflow.sweep import reverse_topo_order
 from hermes_workflow.materialize import MaterializeError, materialize
-from hermes_workflow.preflight import probe_profiles
+from hermes_workflow.preflight import probe_profiles, _remediation
 from hermes_workflow.runview import RunView
+from hermes_workflow.worktree import _orphaned_branches
 from hermes_workflow.version import (
     PLUGIN_VERSION,
     SCHEMA_VERSION,
     SENTINEL_ROOT_ASSIGNEE,
+)
+from hermes_workflow.reconcile_exec import (
+    _collapse_duplicates,
+    _host_board,
+    _relink_created_to_joins,
 )
 
 _CODEX_LANE = "codex"
@@ -49,19 +52,6 @@ def _require_orchestrator(tool):
     if os.environ.get("HERMES_KANBAN_TASK"):
         return {"error": f"{tool} must run in orchestrator context (no HERMES_KANBAN_TASK)"}
     return None
-
-
-def _remediation(profile: str, err) -> str:
-    """Map a bad-profile error to an actionable hint.
-
-    A not-discovered / not-enabled / missing error means the plugin just needs
-    enabling under that profile; anything else is a genuine load error.
-    """
-    if err is None or err == "not-discovered" or "not enabled" in err:
-        return (f"enable hermes-workflow for profile '{profile}': add 'hermes-workflow' to the "
-                f"plugins.enabled list in that profile's config.yaml "
-                f"(hermes -p {profile} config edit), then start a new session")
-    return f"load error: {err}"
 
 
 def _capture_base_ref(t, params):
@@ -258,33 +248,6 @@ def workflow_status(ctx, *, root_id, board=None):
     }
 
 
-def _relink_created_to_joins(wb, t, created, rv):
-    """Link each freshly-created card to any pre-existing downstream join.
-
-    materialize wires a created card to its PARENTS; a pre-existing join that
-    fans in over the created card's stage is NOT recreated, so its edge to the
-    new card is missing. We add it (kanban_link demotes a `ready` join to `todo`).
-    Each join's current parents are fetched once and cached.
-    """
-    parents_of = {}        # join_cid -> set(parent_cids), fetched once per join
-    relinked = []
-    for ident, child_cid in created.items():
-        for s in t.stages:
-            if ident.stage_id not in s.needs:
-                continue
-            for join_ident in [i for i in rv.existing if i.stage_id == s.id]:
-                join_cid = rv.by_identity.get(join_ident)
-                if not join_cid:
-                    continue
-                if join_cid not in parents_of:
-                    parents_of[join_cid] = set(wb.show(join_cid).get("parents") or [])
-                if child_cid not in parents_of[join_cid]:
-                    wb.link(child_cid, join_cid)        # link(parent=created child, child=join)
-                    parents_of[join_cid].add(child_cid)  # keep cache consistent
-                    relinked.append((child_cid, join_cid))
-    return relinked
-
-
 def workflow_reconcile(ctx, *, root_id, board=None, kb=None, conn=None):
     """Re-run the engine graph from durable inputs: create-missing + re-link + diagnose.
 
@@ -340,24 +303,8 @@ def workflow_reconcile(ctx, *, root_id, board=None, kb=None, conn=None):
 
 
 # ---------------------------------------------------------------------------
-# Approve / abandon orchestrator tools + dedup helpers (Phase 3, Task 21).
+# Approve / abandon orchestrator tools (Phase 3, Task 21).
 # ---------------------------------------------------------------------------
-
-
-@contextlib.contextmanager
-def _host_board(board, kb, conn):
-    """Yield a HostBoard for the host-only kb.* ops (archive/reclaim — Hermes finding Y).
-
-    A caller-supplied kb/conn (tests) is used as-is and NOT closed (the caller owns it).
-    Otherwise open a host connection via connect_closing, which closes the FD on exit
-    (Hermes #33159 — bare connect() leaks FDs in long-lived orchestrator processes).
-    """
-    if kb is not None and conn is not None:
-        yield HostBoard(kb, conn, board)
-        return
-    from hermes_cli import kanban_db as _kb
-    with _kb.connect_closing(board=board) as opened:
-        yield HostBoard(_kb, opened, board)
 
 
 def workflow_approve(ctx, *, gate_card, board=None):
@@ -377,20 +324,6 @@ def workflow_approve(ctx, *, gate_card, board=None):
     except BoardError as e:
         return {"error": str(e)}
     return {"approved": gate_card}
-
-
-def _orphaned_branches(t, rv, root_id):
-    """Engine-derived worktree branch names for the run's worktree-stage cards.
-
-    Matches worktree.py: ``wf/<root>/<stage>/<fan_index>``.
-    """
-    stages = {s.id: s for s in t.stages}
-    out = []
-    for ident in rv.existing:
-        s = stages.get(ident.stage_id)
-        if s and s.workspace.startswith("worktree:"):
-            out.append(f"wf/{root_id}/{ident.stage_id}/{ident.fan_index}")
-    return sorted(out)
 
 
 def workflow_abandon(ctx, *, root_id, board=None, kb=None, conn=None):
@@ -450,330 +383,3 @@ def workflow_abandon(ctx, *, root_id, board=None, kb=None, conn=None):
                 failures.append({"card": cid, "op": "archive", "error": str(e)})
 
     return {"abandoned": root_id, "orphaned_branches": orphaned, "failures": failures}
-
-
-def _enumerate_cards(ctx, board, root_id):
-    """Link-walk the run from the root, returning every sentinel-stamped card dict.
-
-    Keeps ALL cards (including archived ones): the collapse planner must see the
-    full duplicate set per identity and each loser's join children to decide what
-    to re-point. The root (no sentinel) is walked for its children but excluded.
-    """
-    wb = WorkerBoard(ctx, board=board)
-    cards, seen, stack = [], set(), [root_id]
-    while stack:
-        cid = stack.pop()
-        if cid in seen:
-            continue
-        seen.add(cid)
-        card = wb.show(cid)
-        stack.extend(card.get("children") or [])
-        if extract_sentinel(card.get("body") or "") is None:
-            continue
-        cards.append(card)
-    return cards
-
-
-def _card_node(card):
-    """Project a flat board card dict into the engine's CardNode value object."""
-    from hermes_workflow.engine.graph import Identity
-    s = extract_sentinel(card.get("body") or "")
-    runs = card.get("runs") or []
-    latest = max((r.get("id", 0) for r in runs), default=None)
-    return CardNode(
-        card_id=card["id"],
-        identity=Identity(s.stage_id, s.fan_index, s.attempt),
-        status=card.get("status"),
-        latest_run_id=latest,
-        created_at=card.get("created_at") or 0.0,
-        parents=tuple(card.get("parents") or []),
-        children=tuple(card.get("children") or []),
-    )
-
-
-def _collapse_duplicates(ctx, board, root_id, wb, t, kb, conn):
-    """Plan duplicate-collapse purely (``plan_collapse``), then apply the plan.
-
-    The engine decides winner / relink edges / reclaim / archive over board-free
-    CardNodes; this executor only applies them. Relink runs FIRST so each join
-    keeps a live winner-parent before any archive triggers a ready-sweep; if ANY
-    relink fails the retire phase is DEFERRED (losers stay live, next reconcile
-    retries) so a join is never archived off its loser onto a missing winner-edge.
-    Otherwise running losers are reclaimed before archival (a detached worker
-    outlives its card). Every op is failure-isolated into ``failures`` (best-effort,
-    like abandon). Returns ``(archived_ids, failures)``.
-    """
-    nodes = [_card_node(c) for c in _enumerate_cards(ctx, board, root_id)]
-    plan = plan_collapse(t, nodes)
-    if not plan.archive:
-        return [], []
-
-    failures = []
-    for winner_id, join_id in plan.relink:
-        try:
-            wb.link(winner_id, join_id)   # link(parent=winner, child=join)
-        except BoardError as e:           # best-effort: isolate per-edge failure
-            failures.append({"card": join_id, "op": "relink", "error": str(e)})
-
-    # A failed relink means a winner is NOT yet parenting some join. Archiving any
-    # loser now would let archive's ready-sweep (kanban recompute_ready) promote that
-    # join off its archived (== satisfied) loser-parent with no live producer. Defer
-    # the WHOLE retire phase: losers stay live, so the next reconcile re-plans the
-    # collapse cleanly (idempotent). Dedup is best-effort — one rare deferral is safe.
-    if failures:
-        return [], failures
-
-    archived = []
-    with _host_board(board, kb, conn) as hb:
-        for loser_id in plan.reclaim:     # reclaim running losers before archiving
-            try:
-                hb.reclaim(loser_id)
-            except Exception as e:
-                failures.append({"card": loser_id, "op": "reclaim", "error": str(e)})
-        for loser_id in plan.archive:
-            try:
-                hb.archive(loser_id)
-                archived.append(loser_id)
-            except Exception as e:
-                failures.append({"card": loser_id, "op": "archive", "error": str(e)})
-    return archived, failures
-
-
-# ---------------------------------------------------------------------------
-# Registration surfaces (Phase 3, Task 22): tool schemas, the registry handler
-# adapter, and the shared CLI/slash argparse builder + dispatcher.
-# ---------------------------------------------------------------------------
-
-WORKFLOW_START_SCHEMA = {
-    "name": "workflow_start",
-    "description": "Validate a workflow template + bindings, pre-flight every bound "
-                   "profile, then seed the run (root blackboard + dynamic-free prefix).",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "template_text": {"type": "string", "description": "The workflow template YAML."},
-            "params": {"type": "object", "description": "Template parameter values."},
-            "bindings": {"type": "object", "description": "Role -> profile bindings."},
-            "board": {"type": "string", "description": "Kanban board name (optional)."},
-        },
-        "required": ["template_text", "params", "bindings"],
-    },
-}
-
-WORKFLOW_STATUS_SCHEMA = {
-    "name": "workflow_status",
-    "description": "Read-only run summary: per-stage rollup plus blocked / "
-                   "awaiting-approval / review-required cards.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "root_id": {"type": "string", "description": "The workflow root card id."},
-            "board": {"type": "string", "description": "Kanban board name (optional)."},
-        },
-        "required": ["root_id"],
-    },
-}
-
-WORKFLOW_VALIDATE_SCHEMA = {
-    "name": "workflow_validate",
-    "description": "Deterministic template gatekeeper (read-only): parse + validate "
-                   "a template and report the first failure.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "template_text": {"type": "string", "description": "The workflow template YAML."},
-        },
-        "required": ["template_text"],
-    },
-}
-
-WORKFLOW_RECONCILE_SCHEMA = {
-    "name": "workflow_reconcile",
-    "description": "Re-run the engine graph from durable inputs: create-missing, "
-                   "re-link to joins, dedup duplicates, and diagnose stalls.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "root_id": {"type": "string", "description": "The workflow root card id."},
-            "board": {"type": "string", "description": "Kanban board name (optional)."},
-        },
-        "required": ["root_id"],
-    },
-}
-
-WORKFLOW_APPROVE_SCHEMA = {
-    "name": "workflow_approve",
-    "description": "Complete a human gate card so its downstream stages promote natively.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "gate_card": {"type": "string", "description": "The human-gate card id to approve."},
-            "board": {"type": "string", "description": "Kanban board name (optional)."},
-        },
-        "required": ["gate_card"],
-    },
-}
-
-WORKFLOW_ABANDON_SCHEMA = {
-    "name": "workflow_abandon",
-    "description": "Hazard-free teardown: reclaim running workers, then archive the "
-                   "whole run leaves-first.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "root_id": {"type": "string", "description": "The workflow root card id."},
-            "board": {"type": "string", "description": "Kanban board name (optional)."},
-        },
-        "required": ["root_id"],
-    },
-}
-
-@dataclass(frozen=True)
-class Command:
-    """One workflow command — the single source for every surface it appears on.
-
-    A descriptor drives tool registration (``name``/``schema``/``fn``), the
-    ``hermes workflow <cmd>`` subparser (``positional`` + ``cli_args``), and
-    CLI/slash dispatch (``bind`` maps a parsed argparse namespace to ``fn``'s
-    keyword args — the one place ``--template`` is read off disk and
-    ``--params``/``--bindings`` JSON is decoded). Add a tool by adding ONE entry
-    to ``COMMANDS``; nothing else enumerates the command set.
-
-    ``name`` is the tool name (``workflow_start``); the runtime CLI/slash
-    subcommand is the same name without the ``workflow_`` prefix (``start``,
-    per the CONTEXT.md naming taxonomy).
-    """
-    name: str
-    fn: Callable
-    schema: dict
-    bind: Callable                 # (argparse.Namespace) -> kwargs dict for fn
-    positional: tuple = ()         # positional argparse arg names, e.g. ("root_id",)
-    cli_args: tuple = ()           # ((flag, argparse_kwargs), ...) optional flags
-
-    @property
-    def cli_name(self) -> str:
-        return self.name.removeprefix("workflow_")
-
-
-COMMANDS = (
-    Command(
-        "workflow_start", workflow_start, WORKFLOW_START_SCHEMA,
-        bind=lambda ns: {
-            "template_text": _read_template(ns.template),
-            "params": json.loads(ns.params),
-            "bindings": json.loads(ns.bindings),
-            "board": ns.board,
-        },
-        cli_args=(("--template", {"required": True}), ("--params", {"default": "{}"}),
-                  ("--bindings", {"required": True}), ("--board", {})),
-    ),
-    Command(
-        "workflow_status", workflow_status, WORKFLOW_STATUS_SCHEMA,
-        bind=lambda ns: {"root_id": ns.root_id, "board": ns.board},
-        positional=("root_id",), cli_args=(("--board", {}),),
-    ),
-    Command(
-        "workflow_validate", workflow_validate, WORKFLOW_VALIDATE_SCHEMA,
-        bind=lambda ns: {"template_text": _read_template(ns.template)},
-        cli_args=(("--template", {"required": True}),),
-    ),
-    Command(
-        "workflow_reconcile", workflow_reconcile, WORKFLOW_RECONCILE_SCHEMA,
-        bind=lambda ns: {"root_id": ns.root_id, "board": ns.board},
-        positional=("root_id",), cli_args=(("--board", {}),),
-    ),
-    Command(
-        "workflow_approve", workflow_approve, WORKFLOW_APPROVE_SCHEMA,
-        bind=lambda ns: {"gate_card": ns.gate_card, "board": ns.board},
-        positional=("gate_card",), cli_args=(("--board", {}),),
-    ),
-    Command(
-        "workflow_abandon", workflow_abandon, WORKFLOW_ABANDON_SCHEMA,
-        bind=lambda ns: {"root_id": ns.root_id, "board": ns.board},
-        positional=("root_id",), cli_args=(("--board", {}),),
-    ),
-)
-
-
-def make_tool_handler(ctx, fn):
-    """Adapt a keyword workflow function to the registry's handler contract.
-
-    The registry calls handler(args: dict, **kwargs) and expects a JSON string
-    that never raises. We unpack args as keywords into fn(ctx, **args), serialize
-    its dict result, and convert any exception into a {"error": ...} envelope.
-    """
-    def handler(args, **kwargs):
-        try:
-            return json.dumps(fn(ctx, **(args or {})))
-        except Exception as e:
-            return json.dumps({"error": f"{fn.__name__} failed: {e}"})
-    return handler
-
-
-def cli_setup(parser):
-    """Add `hermes workflow <subcommand>` sub-subparsers (also reused by the slash parser).
-
-    Every subparser is built from a ``COMMANDS`` descriptor — there is no second,
-    hand-maintained argparse command list, so adding a tool needs only a descriptor.
-    """
-    sub = parser.add_subparsers(dest="wf_cmd", required=True)
-    for cmd in COMMANDS:
-        p = sub.add_parser(cmd.cli_name)
-        for name in cmd.positional:
-            p.add_argument(name)
-        for flag, kwargs in cmd.cli_args:
-            p.add_argument(flag, **kwargs)
-
-
-def _read_template(path):
-    # utf-8-sig transparently strips a BOM (Windows/WSL2 GUI editors) and reads
-    # plain UTF-8 unchanged. Templates are the only on-disk read (CLI path).
-    return pathlib.Path(path).read_text(encoding="utf-8-sig")
-
-
-_COMMANDS_BY_CLI = {cmd.cli_name: cmd for cmd in COMMANDS}
-
-
-def command_names_hint() -> str:
-    """`<start|status|...>` usage hint derived from COMMANDS (no second list)."""
-    return "<" + "|".join(cmd.cli_name for cmd in COMMANDS) + ">"
-
-
-def _dispatch_ns(ctx, ns):
-    """Run a parsed `workflow ...` namespace; returns the tool's dict result.
-
-    Table lookup over ``COMMANDS`` (replacing the old per-command if/elif chain):
-    the descriptor's ``bind`` maps the namespace to the tool's keyword args.
-    """
-    cmd = _COMMANDS_BY_CLI.get(getattr(ns, "wf_cmd", None))
-    if cmd is None:
-        return {"error": f"unknown workflow subcommand: {getattr(ns, 'wf_cmd', None)!r}"}
-    return cmd.fn(ctx, **cmd.bind(ns))
-
-
-def cli_dispatch(ctx, args):
-    """`hermes workflow ...` terminal handler (args already parsed by Hermes)."""
-    try:
-        result = _dispatch_ns(ctx, args)
-    except Exception as e:
-        result = {"error": f"workflow {getattr(args, 'wf_cmd', '?')} failed: {e}"}
-    print(json.dumps(result, indent=2))
-    return result
-
-
-def slash_dispatch(ctx, raw_args):
-    """`/workflow ...` in-session slash handler. Returns a JSON string (or usage)."""
-    parser = argparse.ArgumentParser(prog="workflow", add_help=False)
-    cli_setup(parser)
-    try:
-        ns = parser.parse_args(shlex.split(raw_args or ""))
-    except SystemExit:
-        return f"usage: /workflow {command_names_hint()} [args]"
-    # The interactive slash surface honors the plugin's flat {"error": ...} contract:
-    # a missing --template path or malformed --params/--bindings JSON becomes a clean
-    # error rather than a raw exception bubbling into the session.
-    try:
-        result = _dispatch_ns(ctx, ns)
-    except Exception as e:
-        result = {"error": f"workflow {ns.wf_cmd} failed: {e}"}
-    return json.dumps(result, indent=2)

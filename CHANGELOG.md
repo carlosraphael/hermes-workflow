@@ -12,8 +12,20 @@ Versions refer to the **distribution** `hermes-workflow`; the run-snapshot
 
 ### Changed
 
+- **`tools.py` split into cohesive modules (SRP).** The 779-LOC `tools.py` is
+  decomposed so every module lands well under the 400-LOC target: the tool JSON
+  schemas move to `schemas.py`; the `COMMANDS` descriptor table + CLI/slash
+  dispatch to `cli.py`; the duplicate-collapse board executor
+  (`_relink_created_to_joins` / `_enumerate_cards` / `_card_node` /
+  `_collapse_duplicates` / `_host_board`) to `reconcile_exec.py`, pairing with the
+  pure `engine/reconcile.py`; `_remediation` to `preflight.py` and
+  `_orphaned_branches` to `worktree.py` (cohesive, purity-preserving homes).
+  `tools.py` keeps only the six `workflow_*` functions and their small helpers.
+  Pure structural move — no behaviour change, no new tools, every invariant intact
+  (the no-raw-SQLite meta-test's only edit is its docstring pointer to the
+  relocated `_host_board`).
 - **The workflow command set is now defined once.** A single frozen `COMMANDS`
-  descriptor tuple in `tools.py` (one `Command` per tool: `name`, `fn`, `schema`,
+  descriptor tuple (one `Command` per tool: `name`, `fn`, `schema`,
   `bind`, `positional`, `cli_args`) replaces the four parallel structures
   (`TOOL_SPECS`, the per-command `cli_setup` subparsers, the `_dispatch_ns`
   if/elif chain, and the duplicated `<start|status|…>` usage hint). Tool

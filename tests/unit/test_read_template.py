@@ -1,5 +1,5 @@
 """Pin that CLI template reads tolerate a UTF-8 BOM (Windows/WSL2-edited files)."""
-from hermes_workflow.tools import _read_template
+from hermes_workflow.cli import _read_template
 
 
 def test_read_template_strips_utf8_bom(tmp_path):

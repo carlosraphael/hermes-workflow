@@ -7,7 +7,8 @@ provision-then-create per child. Each child gets its own git worktree on a
 fixed, engine-derived branch so workers never share a working tree.
 
 Consumed by the Task 15 materializer, which turns a ``worktree:<repo>``
-workspace spec into a provisioned ``dir:<provisioned-path>`` card.
+workspace spec into a provisioned ``dir:<provisioned-path>`` card; the same
+branch format is reused by ``_orphaned_branches`` to audit teardown (abandon).
 
 ``ident`` is an ``engine.graph.Identity`` (``.stage_id``/``.fan_index``/
 ``.attempt``); it is duck-typed rather than imported to keep this module
@@ -68,6 +69,22 @@ def provision_worktree(root_id: str, ident, repo: str, base_ref: str | None = No
                 continue          # brief retry on index.lock contention
             raise                 # genuine failure -> reconcile handles it
     # unreachable: the final attempt always returns or raises inside the loop.
+
+
+def _orphaned_branches(t, rv, root_id):
+    """Engine-derived worktree branch names for a run's worktree-stage cards.
+
+    Matches ``provision_worktree``'s format ``wf/<root>/<stage>/<fan_index>``; used
+    by ``workflow_abandon`` to audit branches left behind after teardown. Pure and
+    duck-typed (``t`` Template, ``rv`` RunView) — no Hermes/engine import.
+    """
+    stages = {s.id: s for s in t.stages}
+    out = []
+    for ident in rv.existing:
+        s = stages.get(ident.stage_id)
+        if s and s.workspace.startswith("worktree:"):
+            out.append(f"wf/{root_id}/{ident.stage_id}/{ident.fan_index}")
+    return sorted(out)
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess:

@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from hermes_workflow import tools
+from hermes_workflow import cli, tools
 
 pytestmark = pytest.mark.integration
 
@@ -31,7 +31,7 @@ stages:
 
 def _parse(argv):
     p = argparse.ArgumentParser(prog="workflow", add_help=False)
-    tools.cli_setup(p)
+    cli.cli_setup(p)
     return p.parse_args(argv)
 
 
@@ -95,12 +95,12 @@ def test_registration_and_cli_derived_from_single_command_source(recording_ctx):
 
     hermes_workflow.register(recording_ctx)
 
-    assert recording_ctx.tools == {cmd.name for cmd in tools.COMMANDS}
+    assert recording_ctx.tools == {cmd.name for cmd in cli.COMMANDS}
 
     parser = argparse.ArgumentParser(prog="workflow", add_help=False)
-    tools.cli_setup(parser)
+    cli.cli_setup(parser)
     sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
-    assert set(sub.choices) == {cmd.cli_name for cmd in tools.COMMANDS}
+    assert set(sub.choices) == {cmd.cli_name for cmd in cli.COMMANDS}
 
 
 def test_register_discovers_bundled_skills(recording_ctx):
@@ -112,7 +112,7 @@ def test_register_discovers_bundled_skills(recording_ctx):
 
 
 def test_tool_handler_serializes_and_never_raises(fake_ctx):
-    handler = tools.make_tool_handler(fake_ctx, tools.workflow_validate)
+    handler = cli.make_tool_handler(fake_ctx, tools.workflow_validate)
 
     # A well-formed (but trivial) call returns a JSON string parsing to a dict.
     out = handler({"template_text": "{}"})
@@ -136,10 +136,10 @@ def test_slash_dispatch_validate(fake_ctx, tmp_path):
         "  - {id: a, role: r}\n"
     )
 
-    r = tools.slash_dispatch(fake_ctx, f"validate --template {tpl}")
+    r = cli.slash_dispatch(fake_ctx, f"validate --template {tpl}")
     assert json.loads(r) == {"ok": True}
 
-    usage = tools.slash_dispatch(fake_ctx, "bogus")
+    usage = cli.slash_dispatch(fake_ctx, "bogus")
     assert usage.startswith("usage")
 
 
@@ -154,7 +154,7 @@ def test_cli_dispatch_bad_template_returns_flat_error(fake_ctx, tmp_path):
     # cli_dispatch must catch it and return a flat {"error": ...}, not raise.
     ns = _parse(["start", "--template", str(tmp_path / "nope.yaml"), "--bindings", "{}"])
 
-    r = tools.cli_dispatch(fake_ctx, ns)
+    r = cli.cli_dispatch(fake_ctx, ns)
 
     assert isinstance(r, dict)
     assert "error" in r
@@ -163,7 +163,7 @@ def test_cli_dispatch_bad_template_returns_flat_error(fake_ctx, tmp_path):
 
 def test_slash_dispatch_bad_template_returns_flat_error(fake_ctx, tmp_path):
     # The slash surface must likewise turn a bad --template path into flat JSON.
-    r = tools.slash_dispatch(fake_ctx, f"start --template {tmp_path / 'nope.yaml'} --bindings '{{}}'")
+    r = cli.slash_dispatch(fake_ctx, f"start --template {tmp_path / 'nope.yaml'} --bindings '{{}}'")
 
     assert isinstance(r, str)
     parsed = json.loads(r)
@@ -188,7 +188,7 @@ def test_slash_dispatch_unexpected_exception_returns_flat_error(
     tpl.write_text(DEMO_TPL_INLINE)
     bindings = '{"scout": "designer", "fixer": "coder", "reporter": "writer"}'
 
-    r = tools.slash_dispatch(
+    r = cli.slash_dispatch(
         fake_ctx,
         f"start --template {tpl} --params '{{\"repo\": \"/r\"}}' "
         f"--bindings '{bindings}' --board {tmp_board.name}",
@@ -205,14 +205,14 @@ def test_slash_dispatch_broadened_except_catches_unexpected_exception(fake_ctx, 
     # tuple raised by _dispatch_ns must still be caught and surfaced as flat JSON, not
     # propagate as a raw traceback. Monkeypatch _dispatch_ns so the raise happens at the
     # exact layer slash_dispatch's except guards.
-    from hermes_workflow import tools
+    from hermes_workflow import cli
 
     def _boom(ctx, ns):
         raise RuntimeError("simulated unexpected dispatch failure")
 
-    monkeypatch.setattr(tools, "_dispatch_ns", _boom)
+    monkeypatch.setattr(cli, "_dispatch_ns", _boom)
     # 'validate --template X' parses cleanly, so parse_args succeeds and _dispatch_ns is reached.
-    r = tools.slash_dispatch(fake_ctx, "validate --template whatever.yaml")
+    r = cli.slash_dispatch(fake_ctx, "validate --template whatever.yaml")
     assert isinstance(r, str)
     parsed = json.loads(r)
     assert isinstance(parsed, dict)
