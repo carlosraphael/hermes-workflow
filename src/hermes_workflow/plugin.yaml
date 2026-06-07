@@ -1,5 +1,4 @@
 name: hermes-workflow
-version: 0.1.4
 description: Declarative multi-stage workflow primitive over the Kanban board.
 provides_tools:
   - workflow_start
