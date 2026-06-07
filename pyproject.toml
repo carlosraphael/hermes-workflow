@@ -4,7 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-workflow"
-version = "0.1.4"
+# Single-sourced from src/hermes_workflow/version.py::PLUGIN_VERSION (see
+# [tool.setuptools.dynamic] below) so the packaged version and the
+# runtime/provenance version can never drift.
+dynamic = ["version"]
 description = "Declarative multi-stage workflow primitive over the Hermes Kanban board."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,6 +44,11 @@ src = ["src", "tests"]
 # reformat deliberate house style across the whole tree (surgical-changes rule).
 select = ["E", "F", "B", "UP"]
 ignore = ["E501"]   # no strict line-length enforcement (PEP 8, practical exceptions)
+
+[tool.setuptools.dynamic]
+# The single source of truth for the package version. setuptools reads the
+# string literal from version.py (statically, no import needed) at build time.
+version = { attr = "hermes_workflow.version.PLUGIN_VERSION" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

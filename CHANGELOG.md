@@ -12,6 +12,14 @@ Versions refer to the **distribution** `hermes-workflow`; the run-snapshot
 
 ### Changed
 
+- **The package version is single-sourced from `version.py`.** `pyproject.toml`
+  now declares `dynamic = ["version"]` and derives it via
+  `[tool.setuptools.dynamic]` from `hermes_workflow.version.PLUGIN_VERSION` —
+  the same constant stamped into every run's provenance — so the packaged,
+  runtime, and provenance versions can no longer drift. `release.yml`'s
+  tag-match check reads `PLUGIN_VERSION` directly (no static `project.version`
+  to read), and a new `tests/unit/test_version_single_source.py` pins the
+  wiring (fails if a disagreeing static version is reintroduced).
 - **`tools.py` split into cohesive modules (SRP).** The 779-LOC `tools.py` is
   decomposed so every module lands well under the 400-LOC target: the tool JSON
   schemas move to `schemas.py`; the `COMMANDS` descriptor table + CLI/slash
