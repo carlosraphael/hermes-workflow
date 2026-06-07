@@ -3,7 +3,7 @@
 import pathlib
 
 from hermes_workflow.version import PLUGIN_VERSION
-from hermes_workflow import tools, hooks
+from hermes_workflow import cli, hooks
 
 
 def register(ctx):
@@ -13,19 +13,19 @@ def register(ctx):
     a worker). Both hooks are bound to ``ctx`` via a closure because Hermes' hook
     invoke does NOT pass ctx (post_tool_call fan-out + pre_tool_call completion gate).
     """
-    for cmd in tools.COMMANDS:
+    for cmd in cli.COMMANDS:
         ctx.register_tool(name=cmd.name, toolset="workflow", schema=cmd.schema,
-                          handler=tools.make_tool_handler(ctx, cmd.fn))
+                          handler=cli.make_tool_handler(ctx, cmd.fn))
 
     ctx.register_hook("post_tool_call", lambda **kw: hooks.on_tool_done(ctx=ctx, **kw))
     ctx.register_hook("pre_tool_call", lambda **kw: hooks.on_tool_pre(ctx=ctx, **kw))
 
     ctx.register_cli_command("workflow", help="manage hermes-workflow runs",
-                             setup_fn=tools.cli_setup,
-                             handler_fn=lambda args: tools.cli_dispatch(ctx, args))
-    ctx.register_command("workflow", lambda raw: tools.slash_dispatch(ctx, raw),
+                             setup_fn=cli.cli_setup,
+                             handler_fn=lambda args: cli.cli_dispatch(ctx, args))
+    ctx.register_command("workflow", lambda raw: cli.slash_dispatch(ctx, raw),
                          description="Manage hermes-workflow runs",
-                         args_hint=tools.command_names_hint())
+                         args_hint=cli.command_names_hint())
 
     # Bundled skills are shipped in Phase 4; guard the (currently absent) dir so
     # register stays crash-free until then.

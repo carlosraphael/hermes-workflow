@@ -3,7 +3,7 @@
 Every DB access in the plugin must go through ctx.dispatch_tool / WorkerBoard or
 the host-side kb.* / HostBoard helpers — NEVER a direct sqlite handle or a raw
 cursor. The only sanctioned connection opener is ``kb.connect_closing(...)``
-inside ``hermes_workflow/tools.py::_host_board``. This test walks every module
+inside ``hermes_workflow/reconcile_exec.py::_host_board``. This test walks every module
 under hermes_workflow/ and fails (naming file + line) on any violation, so a
 future regression that smuggles in raw SQLite is caught.
 """
@@ -59,6 +59,6 @@ def test_no_raw_sqlite_in_hermes_workflow():
     assert not offenders, (
         "raw SQLite / raw cursor / bare .connect( found in hermes_workflow/ "
         "(all DB access must go via ctx.dispatch_tool/WorkerBoard or kb.*/HostBoard; "
-        "only connect_closing in tools.py::_host_board is sanctioned):\n"
+        "only connect_closing in reconcile_exec.py::_host_board is sanctioned):\n"
         + "\n".join(offenders)
     )

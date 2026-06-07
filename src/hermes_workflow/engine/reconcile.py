@@ -84,7 +84,7 @@ def _identity_key(ident) -> tuple:
 def _is_join(template: Template, source_ident, child_ident) -> bool:
     """A child is a join of the source iff its stage fans in over the source's stage.
 
-    Mirrors ``tools._relink_created_to_joins`` (``source in child_stage.needs``) so
+    Mirrors ``reconcile_exec._relink_created_to_joins`` (``source in child_stage.needs``) so
     create-relink and collapse-relink share one join-detection rule. An unknown
     child stage is treated as a non-join (conservative: never re-point blindly).
     """

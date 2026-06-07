@@ -117,6 +117,19 @@ def probe_profiles(profiles, *, codex_profiles=frozenset(), project_plugin=False
     return out
 
 
+def _remediation(profile: str, err) -> str:
+    """Map a bad-profile probe error to an actionable hint.
+
+    A not-discovered / not-enabled / missing error means the plugin just needs
+    enabling under that profile; anything else is a genuine load error.
+    """
+    if err is None or err == "not-discovered" or "not enabled" in err:
+        return (f"enable hermes-workflow for profile '{profile}': add 'hermes-workflow' to the "
+                f"plugins.enabled list in that profile's config.yaml "
+                f"(hermes -p {profile} config edit), then start a new session")
+    return f"load error: {err}"
+
+
 if __name__ == "__main__":
     import json
 

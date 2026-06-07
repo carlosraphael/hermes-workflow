@@ -51,11 +51,14 @@ against the installed package. One-line purpose per module:
 src/hermes_workflow/
 ├── __init__.py        # register(ctx): wire tools + both hooks + CLI + slash + skills
 ├── version.py         # PLUGIN_VERSION / SCHEMA_VERSION / SUPPORTED_SCHEMA_VERSIONS + sentinel assignees
-├── tools.py           # the six orchestrator-facing workflow_* funcs + schemas + CLI/slash dispatch
+├── tools.py           # the six orchestrator-facing workflow_* funcs + their small helpers
+├── schemas.py         # the six workflow_* tool JSON schemas (the tools' wire contract)
+├── cli.py             # COMMANDS descriptor table + hermes-workflow CLI + /workflow slash dispatch
 ├── hooks.py           # post_tool_call fan-out driver + pre_tool_call completion gate
 ├── veto.py            # PURE, TOTAL completion-gate logic (expand_out shape+max, commit-clean)
 ├── materialize.py     # turn engine CardSpecs into real board cards (sentinel + lifecycle preamble, joins R5)
 ├── board.py           # WorkerBoard (ctx.dispatch_tool surface) + HostBoard (host kb.* surface)
+├── reconcile_exec.py  # apply engine/reconcile.py::plan_collapse to the live board (relink/dedup/host-board)
 ├── runview.py         # link-walk the run from the root into a live picture for the engine
 ├── preflight.py       # per-profile loadability probe (one spawned subprocess per profile)
 ├── sweep.py           # reverse-topological (leaves-first) ordering for hazard-free abandon
@@ -107,7 +110,7 @@ say so in the description.
 - **No raw SQLite anywhere.** All DB access goes through `ctx.dispatch_tool`
   (`WorkerBoard`) or host `kb.*` (`HostBoard` / `RunView` db-path). The single
   host connection is opened via `kanban_db.connect_closing` in
-  `tools.py::_host_board` (closes the FD on exit — Hermes #33159).
+  `reconcile_exec.py::_host_board` (closes the FD on exit — Hermes #33159).
   _Pinned by `tests/unit/test_no_raw_sqlite.py`._
 - **Engine purity.** Engine code (`engine/*.py`) imports stdlib + PyYAML +
   intra-package only — never the board, Hermes, or any other third-party package.
@@ -154,7 +157,7 @@ Cross-check against `version.py` and `engine/provenance.py`.
 ## Adding a tool or hook
 
 Tools follow `COMMANDS → make_tool_handler → register(ctx)`. The `COMMANDS`
-descriptor tuple (`tools.py`) is the **single source of truth**: one frozen
+descriptor tuple (`cli.py`) is the **single source of truth**: one frozen
 `Command(name, fn, schema, bind, positional, cli_args)` per tool drives tool
 registration, the `hermes workflow <cmd>` subparser, and `/workflow` dispatch.
 Adding a tool is one descriptor — never a separate edit to the argparse setup or
@@ -164,15 +167,16 @@ the dispatch routing (both loop `COMMANDS`).
    (`{"error": …}` on failure — the **flat-error contract**). Mutating tools call
    `_require_orchestrator(...)` to self-refuse inside a dispatcher-spawned worker
    (`HERMES_KANBAN_TASK` set).
-2. Add a schema dict and one `Command(...)` entry to `COMMANDS`. Its `positional`
-   + `cli_args` describe the CLI subparser; its `bind` maps the parsed argparse
-   namespace to the tool's keyword args (the one place `--template` is read off
-   disk and `--params`/`--bindings` JSON is decoded). The CLI/slash subcommand is
-   the tool name minus the `workflow_` prefix (`workflow_start` → `start`).
-3. `register(ctx)` (`__init__.py`) loops `COMMANDS`, registering each under
-   toolset `workflow` with `make_tool_handler(ctx, cmd.fn)` — which unpacks args
-   into `fn(ctx, **args)`, JSON-serializes the dict, and converts any exception
-   into a `{"error": …}` envelope so the handler never raises.
+2. Add a schema dict (`schemas.py`) and one `Command(...)` entry to `COMMANDS`
+   (`cli.py`). Its `positional` + `cli_args` describe the CLI subparser; its
+   `bind` maps the parsed argparse namespace to the tool's keyword args (the one
+   place `--template` is read off disk and `--params`/`--bindings` JSON is
+   decoded). The CLI/slash subcommand is the tool name minus the `workflow_`
+   prefix (`workflow_start` → `start`).
+3. `register(ctx)` (`__init__.py`) loops `cli.COMMANDS`, registering each under
+   toolset `workflow` with `cli.make_tool_handler(ctx, cmd.fn)` — which unpacks
+   args into `fn(ctx, **args)`, JSON-serializes the dict, and converts any
+   exception into a `{"error": …}` envelope so the handler never raises.
 
 Both hooks are registered in `register(ctx)` and **bound to `ctx` via a closure**
 — Hermes' hook invoke calls `cb(**kwargs)` and does **not** pass `ctx`. New
