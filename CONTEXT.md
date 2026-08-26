@@ -20,8 +20,8 @@ Stays namespaced to avoid top-level collision in the user's Hermes environment.
 _Avoid_: module, library.
 
 **Plugin name** (`hermes-workflow`):
-The Hermes-facing identity — `name:` in `plugin.yaml` and the key a user adds to
-`plugins.enabled` in each bound profile's `config.yaml`.
+The Hermes-facing identity — `name:` in `src/hermes_workflow/plugin.yaml` and
+the key a user adds to `plugins.enabled` in each bound profile's `config.yaml`.
 _Avoid_: plugin id.
 
 **Runtime surface** (`workflow`):
