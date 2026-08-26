@@ -11,5 +11,26 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "deny": [
+      "Bash(git push --tags:*)",
+      "Bash(git push origin --tags:*)",
+      "Bash(git push --follow-tags:*)",
+      "Bash(git push origin --follow-tags:*)",
+      "Bash(git push origin v[0-9]+.[0-9]+.[0-9]+:*)",
+      "Bash(gh release create:*)",
+      "Bash(gh workflow run release.yml:*)",
+      "Bash(gh workflow run release:*)",
+      "Bash(gh pr merge --auto:*)"
+    ],
+    "ask": [
+      "Bash(gh pr merge:*)"
+    ],
+    "allow": [
+      "Bash(uv build:*)",
+      "Bash(uv run --extra dev pytest -m 'not integration':*)",
+      "Bash(uv run --extra dev ruff check src tests:*)"
+    ]
   }
 }
