@@ -1,8 +1,8 @@
 # forge profile
 
 <!-- forge:begin meta -->
-<!-- forge:wrote a52487fec768c595 -->
-<!-- forge:version 0.1.0 -->
+<!-- forge:wrote 6f781cd4ee88b7ee -->
+<!-- forge:version 0.2.0 -->
 
 forge wrote this file when it surveyed the repository. Regions between
 `forge:begin` and `forge:end` markers belong to forge and are rewritten in place by setup
